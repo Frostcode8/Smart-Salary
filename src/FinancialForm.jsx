@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { db, auth } from './firebase.js'; 
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, writeBatch } from 'firebase/firestore';
 import { Calculator, ArrowRight, IndianRupee, LogOut } from 'lucide-react';
 
 export default function FinancialForm() {
@@ -43,13 +43,30 @@ export default function FinancialForm() {
     return Math.max(0, Math.min(100, Math.round(score)));
   };
 
+  // Timeout wrapper for Firestore operations
+  const withTimeout = (promise, timeoutMs = 10000) => {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Operation timed out after ' + timeoutMs + 'ms')), timeoutMs)
+      )
+    ]);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) {
+        console.error("❌ No user logged in!");
+        alert("Please log in first!");
+        setLoading(false);
+        return;
+      }
+
+      console.log("🔹 Saving data for user:", user.uid);
 
       const score = calculateScore(
         formData.income, 
@@ -58,16 +75,53 @@ export default function FinancialForm() {
         formData.savings
       );
 
-      // ✅ FIXED: Correct path structure
-      await setDoc(doc(db, 'users', user.uid), {
-        ...formData,
+      const docRef = doc(db, 'users', user.uid);
+      
+      const dataToSave = {
+        income: formData.income,
+        expense: formData.expense,
+        emi: formData.emi || '0',
+        savings: formData.savings,
         score: score,
-        updatedAt: new Date()
-      }, { merge: true });
+        updatedAt: new Date().toISOString()
+      };
 
+      console.log("📦 Data to save:", dataToSave);
+      console.log("📍 Document path:", `users/${user.uid}`);
+      
+      // Try with batch write instead (sometimes more reliable)
+      console.log("⏳ Starting batch write...");
+      const batch = writeBatch(db);
+      batch.set(docRef, dataToSave, { merge: true });
+      
+      await withTimeout(batch.commit(), 10000);
+      console.log("✅ Batch write completed successfully!");
+
+      // Small delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Verify the write
+      console.log("⏳ Verifying with getDoc...");
+      const verifyDoc = await withTimeout(getDoc(docRef), 10000);
+      
+      if (verifyDoc.exists()) {
+        console.log("✅ VERIFIED: Data exists in Firestore:", verifyDoc.data());
+        alert("Success! Your financial profile has been saved.");
+      } else {
+        console.error("❌ WARNING: Document not found after write!");
+        alert("Warning: Data may not have been saved properly.");
+      }
+      
     } catch (error) {
-      console.error("Error saving data:", error);
-      alert("Error saving data: " + error.message);
+      console.error("❌ Error saving data:", error);
+      console.error("Error name:", error.name);
+      console.error("Error message:", error.message);
+      
+      if (error.message.includes('timed out')) {
+        alert("The operation is taking too long. This might be due to network restrictions. Your data may still be saving in the background. Please refresh and check if your dashboard appears.");
+      } else {
+        alert("Error saving data: " + error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -170,7 +224,7 @@ export default function FinancialForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl font-bold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"
+            className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl font-bold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Analyzing...' : 'Generate Dashboard'}
             {!loading && <ArrowRight className="w-5 h-5" />}

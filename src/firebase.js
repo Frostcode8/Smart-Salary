@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableNetwork } from "firebase/firestore";
+import { getFirestore, initializeFirestore, CACHE_SIZE_UNLIMITED } from "firebase/firestore";
 
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined') {
@@ -19,10 +19,13 @@ const getFirebaseConfig = () => {
 
 const app = initializeApp(getFirebaseConfig());
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 
-enableNetwork(db).catch((err) => {
-  console.warn("Network enable failed:", err);
+// Initialize Firestore with cache disabled to prevent hanging
+export const db = initializeFirestore(app, {
+  cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+  experimentalForceLongPolling: true, // Use long-polling instead of WebSockets
 });
+
+console.log("✅ Firestore initialized with long-polling");
 
 export const appId = typeof __app_id !== 'undefined' ? __app_id : 'smartsalary-default';
