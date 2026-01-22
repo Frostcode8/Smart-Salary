@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   DollarSign, TrendingUp, Shield, Sparkles, ArrowRight, 
-  Lock, PieChart, Wallet, CreditCard
+  Lock, CreditCard
 } from 'lucide-react';
 
 export default function LandingPage({ onNavigate }) {

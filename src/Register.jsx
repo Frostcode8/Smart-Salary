@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { User, Mail, Key, ArrowLeft, PieChart } from 'lucide-react';
-// FIX: Import from shared file (no extension)
-import { auth, db } from '../firebase'; 
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from "firebase/auth";
+import { auth, db } from './firebase.js';
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 
 export default function Register({ onNavigate }) {
@@ -20,13 +19,14 @@ export default function Register({ onNavigate }) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      
       await updateProfile(user, { displayName: name });
       
-      // Create user doc
-      await setDoc(doc(db, "users", user.uid), {
+      // ✅ FIXED: Correct path structure
+      await setDoc(doc(db, 'users', user.uid), {
         name: name,
         email: email,
-        createdAt: new Date()
+        joinedAt: new Date()
       }, { merge: true });
 
     } catch (err) {
@@ -36,29 +36,14 @@ export default function Register({ onNavigate }) {
       } else {
         setError('Registration failed. Please try again.');
       }
-    } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleRegister = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      await setDoc(doc(db, "users", result.user.uid), {
-        name: result.user.displayName,
-        email: result.user.email,
-        createdAt: new Date()
-      }, { merge: true });
-    } catch (err) {
-      setError("Google Registration failed.");
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-700">
-        <button onClick={() => onNavigate('login')} className="flex items-center text-slate-400 hover:text-white mb-8 transition-colors">
+        <button onClick={() => onNavigate('home')} className="flex items-center text-slate-400 hover:text-white mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4 mr-2" /> Back
         </button>
 

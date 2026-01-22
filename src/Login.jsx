@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Mail, Key, PieChart } from 'lucide-react';
-// FIX: Import from shared file (no extension)
-import { auth } from '../firebase'; 
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { Mail, Key, PieChart, ArrowLeft } from 'lucide-react';
+// Explicitly using .js extension
+import { auth } from './firebase.js'; 
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 export default function Login({ onNavigate }) {
   const [email, setEmail] = useState('');
@@ -16,7 +16,7 @@ export default function Login({ onNavigate }) {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // App.jsx will handle navigation
+      // Navigation handled by App.jsx
     } catch (err) {
       console.error(err);
       setError("Invalid Email or Password");
@@ -24,19 +24,16 @@ export default function Login({ onNavigate }) {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error(err);
-      setError("Google Sign-In failed.");
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-700">
+        <button 
+          onClick={() => onNavigate('home')} 
+          className="flex items-center text-slate-400 hover:text-white mb-6 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back
+        </button>
+
         <div className="flex justify-center mb-8">
           <div className="w-16 h-16 bg-gradient-to-br from-violet-600 to-fuchsia-600 rounded-2xl flex items-center justify-center shadow-lg shadow-violet-500/20">
             <PieChart className="w-8 h-8 text-white" />
@@ -91,19 +88,6 @@ export default function Login({ onNavigate }) {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
-
-        <div className="mt-6 flex items-center gap-4">
-          <div className="h-px bg-slate-700 flex-1"></div>
-          <span className="text-slate-500 text-sm">OR</span>
-          <div className="h-px bg-slate-700 flex-1"></div>
-        </div>
-
-        <button 
-          onClick={handleGoogleLogin}
-          className="w-full mt-6 py-3 bg-slate-700 text-white rounded-xl font-medium hover:bg-slate-600 transition-colors flex items-center justify-center gap-2"
-        >
-          <span className="mr-2">G</span> Continue with Google
-        </button>
 
         <p className="text-center mt-8 text-slate-400">
           Don't have an account?{' '}
