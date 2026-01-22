@@ -1,19 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  User,
-  Mail, 
-  Key, 
-  ArrowLeft, 
-  PieChart
-} from 'lucide-react';
-// Import from the firebase file one level up
-import { auth, db } from '../firebase';
-import { 
-  createUserWithEmailAndPassword, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  updateProfile
-} from "firebase/auth";
+import { User, Mail, Key, ArrowLeft, PieChart } from 'lucide-react';
+// FIX: Import from shared file (no extension)
+import { auth, db } from '../firebase'; 
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 
 export default function Register({ onNavigate }) {
@@ -29,19 +18,16 @@ export default function Register({ onNavigate }) {
     setLoading(true);
 
     try {
-      // 1. Create User
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
-
-      // 2. Update Profile Name
       await updateProfile(user, { displayName: name });
-
-      // 3. Initialize empty user document
+      
+      // Create user doc
       await setDoc(doc(db, "users", user.uid), {
         name: name,
         email: email,
         createdAt: new Date()
-      });
+      }, { merge: true });
 
     } catch (err) {
       console.error(err);
@@ -59,16 +45,12 @@ export default function Register({ onNavigate }) {
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
-      
-      // Ensure user doc exists for Google users too
       await setDoc(doc(db, "users", result.user.uid), {
         name: result.user.displayName,
         email: result.user.email,
         createdAt: new Date()
       }, { merge: true });
-
     } catch (err) {
-      console.error(err);
       setError("Google Registration failed.");
     }
   };
@@ -76,10 +58,7 @@ export default function Register({ onNavigate }) {
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-700">
-        <button 
-          onClick={() => onNavigate('home')}
-          className="flex items-center text-slate-400 hover:text-white mb-8 transition-colors"
-        >
+        <button onClick={() => onNavigate('login')} className="flex items-center text-slate-400 hover:text-white mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4 mr-2" /> Back
         </button>
 
@@ -103,68 +82,28 @@ export default function Register({ onNavigate }) {
             <label className="block text-sm font-medium text-slate-400 mb-1">Full Name</label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="text"
-                required
-                className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
-                placeholder="John Doe"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+              <input type="text" required className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors" placeholder="John Doe" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-1">Email Address</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="email"
-                required
-                className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <input type="email" required className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-1">Password</label>
             <div className="relative">
               <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="password"
-                required
-                className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <input type="password" required className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-violet-500/25 transition-all mt-2"
-          >
+          <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-violet-500/25 transition-all mt-2">
             {loading ? 'Creating Account...' : 'Get Started'}
           </button>
         </form>
-
-        <div className="mt-6 flex items-center gap-4">
-          <div className="h-px bg-slate-700 flex-1"></div>
-          <span className="text-slate-500 text-sm">OR</span>
-          <div className="h-px bg-slate-700 flex-1"></div>
-        </div>
-
-        <button 
-          onClick={handleGoogleRegister}
-          className="w-full mt-6 py-3 bg-slate-700 text-white rounded-xl font-medium hover:bg-slate-600 transition-colors flex items-center justify-center gap-2"
-        >
-          <span className="mr-2">G</span> Register with Google
-        </button>
 
         <p className="text-center mt-8 text-slate-400">
           Already have an account?{' '}

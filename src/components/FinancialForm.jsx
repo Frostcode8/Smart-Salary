@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-// Fixed import path: Added .js extension to ensure resolution
 import { db, auth } from '../firebase.js';
 import { doc, setDoc } from 'firebase/firestore';
 import { Calculator, ArrowRight, IndianRupee } from 'lucide-react';
@@ -16,13 +15,14 @@ export default function FinancialForm({ onComplete }) {
   const calculateScore = (income, expense, emi, savings) => {
     let score = 100;
     
-    // Convert string inputs to numbers
     const numIncome = parseFloat(income);
     const numExpense = parseFloat(expense);
     const numEmi = parseFloat(emi) || 0;
     const numSavings = parseFloat(savings) || 0;
 
-    // Percentages
+    // Safety check: Avoid division by zero
+    if (!numIncome || numIncome <= 0) return 0;
+
     const expensePercent = (numExpense / numIncome) * 100;
     const savingsPercent = (numSavings / numIncome) * 100;
     const emiPercent = (numEmi / numIncome) * 100;
@@ -42,7 +42,6 @@ export default function FinancialForm({ onComplete }) {
       score -= 10;
     }
 
-    // Clamp score between 0 and 100
     return Math.max(0, Math.min(100, Math.round(score)));
   };
 
@@ -61,17 +60,17 @@ export default function FinancialForm({ onComplete }) {
         formData.savings
       );
 
-      // Save to Firestore
+      // FIX 3: Use merge: true so we don't overwrite Name/Email
       await setDoc(doc(db, "users", user.uid), {
         ...formData,
         score: score,
         updatedAt: new Date()
-      });
+      }, { merge: true });
 
-      onComplete(); // Navigate to Dashboard
+      onComplete(); 
     } catch (error) {
       console.error("Error saving data:", error);
-      alert("Failed to save data. Please try again.");
+      alert("Failed to save data. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -98,6 +97,7 @@ export default function FinancialForm({ onComplete }) {
                 <input
                   type="number"
                   required={field !== 'emi' && field !== 'savings'}
+                  min="0"
                   className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-violet-500 transition-colors"
                   placeholder="0"
                   value={formData[field]}
@@ -112,7 +112,7 @@ export default function FinancialForm({ onComplete }) {
             disabled={loading}
             className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl font-bold text-white shadow-lg shadow-violet-500/25 hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
           >
-            {loading ? 'Analyzing...' : 'Generate My Score'}
+            {loading ? 'Analysing...' : 'Generate My Score'}
             {!loading && <ArrowRight className="w-5 h-5" />}
           </button>
         </form>

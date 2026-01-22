@@ -1,17 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  Mail, 
-  Key, 
-  ArrowLeft, 
-  PieChart
-} from 'lucide-react';
-// Import from the firebase file one level up
+import { Mail, Key, PieChart } from 'lucide-react';
+// FIX: Import from shared file (no extension)
 import { auth } from '../firebase'; 
-import { 
-  signInWithEmailAndPassword, 
-  GoogleAuthProvider, 
-  signInWithPopup
-} from "firebase/auth";
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 export default function Login({ onNavigate }) {
   const [email, setEmail] = useState('');
@@ -25,11 +16,10 @@ export default function Login({ onNavigate }) {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // App.jsx will detect the login automatically
+      // App.jsx will handle navigation
     } catch (err) {
       console.error(err);
       setError("Invalid Email or Password");
-    } finally {
       setLoading(false);
     }
   };
@@ -38,23 +28,15 @@ export default function Login({ onNavigate }) {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      // App.jsx will handle the rest
     } catch (err) {
       console.error(err);
-      setError("Google Sign-In failed. Please try again.");
+      setError("Google Sign-In failed.");
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-700">
-        <button 
-          onClick={() => onNavigate('home')}
-          className="flex items-center text-slate-400 hover:text-white mb-8 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back
-        </button>
-
         <div className="flex justify-center mb-8">
           <div className="w-16 h-16 bg-gradient-to-br from-violet-600 to-fuchsia-600 rounded-2xl flex items-center justify-center shadow-lg shadow-violet-500/20">
             <PieChart className="w-8 h-8 text-white" />
