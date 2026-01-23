@@ -53,6 +53,68 @@ export default function FinancialForm() {
     ]);
   };
 
+  const toNum = (v) => parseFloat(v || 0);
+
+const calcPerc = (part, total) => {
+  if (!total || total <= 0) return 0;
+  return Math.round((part / total) * 100);
+};
+
+// ✅ Spender type detection
+const detectSpenderType = ({ expensePercent, savingsPercent }) => {
+  if (savingsPercent >= 30 && expensePercent <= 50) return "Saver";
+  if (expensePercent > 70 || savingsPercent < 10) return "Overspender";
+  return "Balanced";
+};
+
+// ✅ Budget plan split (simple + GenZ friendly)
+const generateBudgetPlan = (income) => {
+  const needs = Math.round(income * 0.50);
+  const wants = Math.round(income * 0.20);
+  const savings = Math.round(income * 0.20);
+  const emergency = Math.round(income * 0.05);
+  const investments = income - (needs + wants + savings + emergency);
+
+  return {
+    needs,
+    wants,
+    savings,
+    emergency,
+    investments: Math.max(0, investments),
+  };
+};
+
+// ✅ Hinglish Advice + Suggestions
+const generateAdvice = ({ spenderType, expensePercent, savingsPercent, emiPercent }) => {
+  let advice = "";
+  const suggestions = [];
+
+  if (spenderType === "Saver") {
+    advice = "Bhai tu toh smart saver nikla ✅ Bas consistency maintain kar 💪";
+    suggestions.push("Savings ko SIP / investment me convert karo 📈");
+  }
+
+  if (spenderType === "Balanced") {
+    advice = "You are doing good 👍 Bas thoda aur saving push kar do.";
+    if (savingsPercent < 20) suggestions.push("Savings ko minimum 20% target karo ✅");
+    if (expensePercent > 60) suggestions.push("Kharcha thoda control karo 😬");
+  }
+
+  if (spenderType === "Overspender") {
+    advice = "⚠️ Bhai kharcha zyada ho raha hai — ab control zaroori hai!";
+    suggestions.push("Wants category me cut karo (food/online shopping) 🛒");
+    suggestions.push("Daily spending limit set karo 📌");
+  }
+
+  // EMI warning
+  if (emiPercent > 30) {
+    suggestions.push("EMI bohot heavy hai ⚠️ Loan restructure / prepayment consider karo");
+  }
+
+  return { advice, suggestions };
+};
+
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -77,14 +139,47 @@ export default function FinancialForm() {
 
       const docRef = doc(db, 'users', user.uid);
       
+      const numIncome = toNum(formData.income);
+const numExpense = toNum(formData.expense);
+const numEmi = toNum(formData.emi);
+const numSavings = toNum(formData.savings);
+
+const expensePercent = calcPerc(numExpense, numIncome);
+const savingsPercent = calcPerc(numSavings, numIncome);
+const emiPercent = calcPerc(numEmi, numIncome);
+
+const spenderType = detectSpenderType({ expensePercent, savingsPercent });
+const budgetPlan = generateBudgetPlan(numIncome);
+const { advice, suggestions } = generateAdvice({
+  spenderType,
+  expensePercent,
+  savingsPercent,
+  emiPercent
+});
+
       const dataToSave = {
-        income: formData.income,
-        expense: formData.expense,
-        emi: formData.emi || '0',
-        savings: formData.savings,
-        score: score,
-        updatedAt: new Date().toISOString()
-      };
+  income: formData.income,
+  expense: formData.expense,
+  emi: formData.emi || '0',
+  savings: formData.savings,
+  score: score,
+
+  // ✅ NEW Calculations
+  expensePercent,
+  savingsPercent,
+  emiPercent,
+
+  // ✅ NEW Insights
+  spenderType,
+  adviceText: advice,
+  suggestions,
+
+  // ✅ NEW Budget Plan
+  budgetPlan,
+
+  updatedAt: new Date().toISOString()
+};
+
 
       console.log("📦 Data to save:", dataToSave);
       console.log("📍 Document path:", `users/${user.uid}`);
