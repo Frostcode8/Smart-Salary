@@ -12,7 +12,7 @@ import {
   setDoc,
   writeBatch
 } from "firebase/firestore";
-import { db } from "./firebase.js";
+import { db } from "./firebase.js"; 
 
 import {
   LogOut,
@@ -58,19 +58,23 @@ import {
   Line
 } from "recharts";
 
+// ⚠️ PASTE YOUR GEMINI API KEY HERE
+const GEMINI_API_KEY = "AIzaSyCLwpS2vuV4wDGQdWcQHcgD1jf479kIw0U"; 
+
 const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 🗓️ Month Selection State
   const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey);
   
-  const [monthData, setMonthData] = useState(null); // The monthly setup doc
-  const [loadingMonthData, setLoadingMonthData] = useState(true); // Specific loading state for month doc
+  const [monthData, setMonthData] = useState(null); 
+  const [loadingMonthData, setLoadingMonthData] = useState(true); 
 
   const [records, setRecords] = useState([]);
   const [loadingRecords, setLoadingRecords] = useState(true);
   
   const [showTransactionForm, setShowTransactionForm] = useState(false);
-  const [showMonthSetupForm, setShowMonthSetupForm] = useState(false); // New state for setup modal
+  const [showMonthSetupForm, setShowMonthSetupForm] = useState(false); 
   const [addingExpense, setAddingExpense] = useState(false);
+  const [generatingAI, setGeneratingAI] = useState(false); 
   
   // Setup Form State
   const [setupFormData, setSetupFormData] = useState({
@@ -120,7 +124,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   useEffect(() => {
     if (!user) return;
 
-    // 1. Fetch Plan for SELECTED month
     setLoadingMonthData(true);
     const monthDocRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
     const unsubMonth = onSnapshot(monthDocRef, (docSnap) => {
@@ -132,8 +135,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       setLoadingMonthData(false);
     });
 
-    // 2. Fetch ALL transactions (Global)
-    // Optimization: In a real app, query by date range. Keeping simple for now.
     const q = query(
       collection(db, "users", user.uid, "financial_records"),
       orderBy("createdAt", "desc")
@@ -158,7 +159,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 📊 Logic & Computations
   // -----------------------------
 
-  // Filter records for the selected month
   const currentMonthRecords = useMemo(() => {
     return records.filter(r => {
       const recDate = r.createdAt?.seconds 
@@ -173,7 +173,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   }, [currentMonthRecords]);
 
   // Derived values from Month Data
-  // Default to 0 if data missing (which triggers empty state UI)
   const income = monthData ? parseFloat(monthData.income || 0) : 0;
   const emi = monthData ? parseFloat(monthData.emi || 0) : 0;
   const savingsTarget = monthData ? parseFloat(monthData.savings || 0) : 0;
@@ -199,8 +198,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     return Math.max(0, Math.min(100, Math.round(score)));
   }, [income, totalActualExpense, realSavings, emi]);
 
+  // ✅ Defined aiInsight BEFORE it is used in return
   const aiInsight = useMemo(() => {
-    if (!monthData) return { text: "Please set up your monthly plan.", color: "text-gray-400" };
+    const safeDefault = { text: "Please set up your monthly plan.", color: "text-gray-400", bg: "bg-gray-500/10", border: "border-gray-500/20" };
+    
+    if (!monthData) return safeDefault;
     
     if (realSavings < 0) return { 
       text: "⚠️ Bhai iss month overspending ho raha hai! Savings negative jaa rahi hai.", 
@@ -287,7 +289,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         createdAt,
       });
 
-      // Update score in month doc if it exists
       if (monthData) {
         const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
         updateDoc(monthRef, { score: dynamicScore }).catch(e => console.log("Score update deferred"));
@@ -318,7 +319,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       const numEmi = parseFloat(setupFormData.emi) || 0;
       const numSavings = parseFloat(setupFormData.savings) || 0;
 
-      // Basic Budget Logic
       const needs = Math.round(numIncome * 0.50);
       const wants = Math.round(numIncome * 0.20);
       const savings = Math.round(numIncome * 0.20);
@@ -327,32 +327,25 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
       const budgetPlan = { needs, wants, savings, emergency, investments };
       
-      // Basic Advice
-      let adviceText = "Good start! Stick to the plan.";
-      if (numEmi > numIncome * 0.3) adviceText = "High EMI detected. Be careful with other expenses.";
-
       const dataToSave = {
         income: setupFormData.income,
         emi: setupFormData.emi || '0',
         savings: setupFormData.savings,
         firstSalary: setupFormData.isFirstSalary,
-        score: 100, // Start fresh
-        expense: 0, // Starts at 0
+        score: 100, 
+        expense: 0, 
         budgetPlan,
-        adviceText,
+        adviceText: "Setup complete! Start tracking your expenses to get AI insights.",
         spenderType: "Balanced",
         updatedAt: new Date().toISOString()
       };
 
       const batch = writeBatch(db);
       const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
-      
-      // Also update main user doc for global context if needed
-      // (Optional depending on app logic, keeping it safe)
       const userRef = doc(db, 'users', user.uid);
 
       batch.set(monthRef, dataToSave, { merge: true });
-      batch.set(userRef, dataToSave, { merge: true }); // Updates 'current' profile
+      batch.set(userRef, dataToSave, { merge: true }); 
 
       await batch.commit();
       
@@ -367,10 +360,91 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     }
   };
 
-
   const handleDelete = async (id) => {
     if (confirm("Delete this transaction?")) {
       await deleteDoc(doc(db, "users", user.uid, "financial_records", id));
+    }
+  };
+
+  // ✅ Trigger AI Directly from Frontend (Simple Version)
+  const handleGenerateAI = async () => {
+    // Basic check for API key
+    if (!GEMINI_API_KEY) {
+      alert("Please add your Gemini API Key in the code (const GEMINI_API_KEY = '...')");
+      return;
+    }
+
+    setGeneratingAI(true);
+    console.log("🖱️ Generating AI Advice..."); 
+
+    try {
+        // Construct the prompt
+        const promptData = {
+            month: selectedMonthKey,
+            income,
+            emi,
+            realSavings,
+            totalExpense: totalActualExpense,
+            breakdown: expenseByCategory.reduce((acc, curr) => {
+                acc[curr.name] = curr.value;
+                return acc;
+            }, {})
+        };
+
+        const prompt = `
+          You are SmartSalary AI, an Indian finance coach.
+          Analyze this monthly data: ${JSON.stringify(promptData)}
+          
+          Provide output in JSON format:
+          {
+            "aiAdviceText": "A short, punchy English advice (1 sentence).",
+            "aiSuggestions": ["Tip 1", "Tip 2", "Tip 3"]
+          }
+          Do not include markdown code blocks. Just raw JSON.
+        `;
+
+        // Direct fetch to Gemini API (REST)
+        // ✅ Switch to 'gemini-pro' as 'gemini-1.5-flash' might be unavailable/renamed in this context
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }]
+          })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || `API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.candidates || data.candidates.length === 0) {
+           throw new Error("No response from AI");
+        }
+
+        let text = data.candidates[0].content.parts[0].text;
+        // Clean markdown if present
+        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+        
+        const aiResult = JSON.parse(text);
+
+        // Save to Firestore so it persists
+        const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
+        await setDoc(monthRef, {
+            aiAdviceText: aiResult.aiAdviceText,
+            aiSuggestions: aiResult.aiSuggestions,
+            aiGeneratedAt: new Date().toISOString()
+        }, { merge: true });
+
+        console.log("✅ AI Advice Saved!");
+
+    } catch (error) {
+        console.error("❌ Failed to generate AI advice:", error);
+        alert(`AI Error: ${error.message}`);
+    } finally {
+        setGeneratingAI(false);
     }
   };
 
@@ -451,10 +525,8 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white font-sans selection:bg-violet-500/30 pb-24 relative overflow-hidden">
       
-      {/* 🌟 Particle Background */}
       {monthData && <ParticleBackground score={dynamicScore} />}
 
-      {/* Static Background Ambience */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-violet-600/10 rounded-full blur-[150px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] bg-fuchsia-600/10 rounded-full blur-[150px]" />
@@ -472,9 +544,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
             </p>
           </div>
 
-          {/* 🗓️ MONTH SELECTOR */}
           <div className="flex items-center bg-white/5 rounded-full border border-white/5 p-1 shadow-inner relative group">
-             {/* Invisible Month Picker Overlay for cleaner UI */}
             <input 
               type="month" 
               value={selectedMonthKey}
@@ -482,7 +552,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
             />
             <button 
-              onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} // Prevent picker opening on arrow click
+              onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} 
               className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -510,7 +580,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6 relative z-10">
         
-        {/* ⚠️ Empty State Logic */}
         {!loadingMonthData && !monthData ? (
           <div className="col-span-full flex flex-col items-center justify-center py-16 border-2 border-dashed border-violet-500/30 rounded-3xl bg-violet-500/5 animate-in fade-in zoom-in duration-300">
             <div className="w-16 h-16 rounded-full bg-violet-500/10 flex items-center justify-center mb-4 ring-4 ring-violet-500/5">
@@ -530,7 +599,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
           </div>
         ) : (
           <>
-             {/* Only show dashboard content if monthData exists */}
              {monthData && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   
@@ -557,9 +625,46 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                       <span>{dynamicScore >= 70 ? "Excellent" : dynamicScore >= 40 ? "Average" : "Needs Care"}</span>
                     </div>
                     
-                    <div className={`w-full p-3 rounded-xl border ${aiInsight.bg} ${aiInsight.border} mt-2 text-left flex gap-3 items-start`}>
-                      <div className={`p-1.5 rounded-full bg-black/20 shrink-0 mt-0.5`}><AlertTriangle className={`w-3 h-3 ${aiInsight.color}`} /></div>
-                      <p className={`text-xs ${aiInsight.color} leading-relaxed`}>"{aiInsight.text}"</p>
+                    {/* 🤖 AI Insight Box with Action */}
+                    <div className="w-full mt-4 space-y-3 relative z-10">
+                        <div className={`w-full p-4 rounded-2xl border ${monthData.aiAdviceText ? 'bg-violet-500/10 border-violet-500/20' : aiInsight.bg + ' ' + aiInsight.border} text-left`}>
+                            <div className="flex gap-3 items-start">
+                                <div className="p-1.5 rounded-full bg-black/20 shrink-0 mt-0.5">
+                                    {monthData.aiAdviceText ? <Sparkles className="w-4 h-4 text-violet-400" /> : <AlertTriangle className={`w-3 h-3 ${aiInsight.color}`} />}
+                                </div>
+                                <div className="space-y-2">
+                                    <p className={`text-xs ${monthData.aiAdviceText ? 'text-violet-200' : aiInsight.color} leading-relaxed`}>
+                                        "{monthData.aiAdviceText || aiInsight.text}"
+                                    </p>
+                                    
+                                    {monthData.aiSuggestions && monthData.aiSuggestions.length > 0 && (
+                                        <ul className="text-[10px] text-gray-400 list-disc pl-4 space-y-1 mt-2 border-t border-white/5 pt-2">
+                                            {monthData.aiSuggestions.map((s, i) => (
+                                                <li key={i}>{s}</li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={handleGenerateAI}
+                            disabled={generatingAI}
+                            className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-semibold text-gray-300 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 cursor-pointer relative z-20"
+                        >
+                            {generatingAI ? (
+                                <>
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Analyzing Finances...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="w-3 h-3 text-violet-400" />
+                                    {monthData.aiAdviceText ? "Regenerate AI Advice" : "Get AI Advice"}
+                                </>
+                            )}
+                        </button>
                     </div>
                   </div>
 
@@ -686,7 +791,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         )}
       </main>
 
-      {/* Floating Action Button (Only show if month is set up) */}
       {monthData && (
         <button
           onClick={() => setShowTransactionForm(true)}
@@ -696,11 +800,9 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         </button>
       )}
 
-      {/* ✅ Month Setup Modal */}
       {showMonthSetupForm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-lg shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
-            {/* Modal BG Effect */}
             <div className="absolute top-0 right-0 w-48 h-48 bg-violet-600/20 rounded-full blur-[60px] -z-10" />
             
             <button onClick={() => setShowMonthSetupForm(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors">
@@ -711,7 +813,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
             <p className="text-gray-400 mb-6 text-sm">Just 3 quick questions to get your financial plan ready.</p>
 
             <form onSubmit={handleMonthSetup} className="space-y-4">
-               {/* Income */}
                <div className="group">
                   <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Total Monthly Income</label>
                   <div className="relative">
@@ -729,7 +830,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                </div>
 
                <div className="grid grid-cols-2 gap-4">
-                 {/* EMI */}
                  <div className="group">
                     <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Fixed EMI / Rent</label>
                     <div className="relative">
@@ -745,7 +845,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                     </div>
                  </div>
 
-                 {/* Savings Target */}
                  <div className="group">
                     <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Savings Goal</label>
                     <div className="relative">
@@ -763,7 +862,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                  </div>
                </div>
 
-               {/* First Salary Toggle */}
                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                  <div className="text-sm text-gray-300">Is this your first salary?</div>
                  <input 
@@ -786,11 +884,9 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         </div>
       )}
 
-      {/* Add Expense Modal */}
       {showTransactionForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
           <div className="bg-[#121215] border-t sm:border border-white/10 rounded-t-[2rem] sm:rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in slide-in-from-bottom duration-300 relative overflow-hidden">
-            {/* Modal Background Glow */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/10 rounded-full blur-[80px] -z-10" />
             
             <div className="flex justify-between items-center mb-8">
