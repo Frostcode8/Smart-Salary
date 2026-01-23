@@ -7,7 +7,8 @@ import {
   addDoc,
   doc,
   Timestamp,
-  deleteDoc
+  deleteDoc,
+  updateDoc
 } from "firebase/firestore";
 import { db } from "./firebase.js";
 
@@ -31,7 +32,8 @@ import {
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
-  Calendar
+  Calendar,
+  AlertTriangle
 } from "lucide-react";
 
 import {
@@ -53,14 +55,14 @@ import {
 } from "recharts";
 
 const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
-  // 🗓️ Month Selection State (Defaults to prop, but can change)
+  // 🗓️ Month Selection State
   const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey);
   
   const [monthData, setMonthData] = useState(null);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
-  const [addingExpense, setAddingExpense] = useState(false); // For micro-interaction state
+  const [addingExpense, setAddingExpense] = useState(false);
   
   // Format the selected month name
   const monthName = new Date(selectedMonthKey + "-01").toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -100,11 +102,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       if (docSnap.exists()) {
         setMonthData(docSnap.data());
       } else {
-        setMonthData(null); // No plan for this month
+        setMonthData(null); 
       }
     });
 
-    // 2. Fetch ALL transactions (filtering happens in memory for smooth UX)
+    // 2. Fetch ALL transactions
     const q = query(
       collection(db, "users", user.uid, "financial_records"),
       orderBy("createdAt", "desc")
@@ -125,6 +127,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     };
   }, [user, selectedMonthKey]); 
 
+  // Filter records for the selected month
   const currentMonthRecords = useMemo(() => {
     return records.filter(r => {
       const recDate = r.createdAt?.seconds 
@@ -134,8 +137,79 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     });
   }, [records, selectedMonthKey]);
 
-  const totalActualExpense = currentMonthRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+  // 🔥 1. Calculate Real Totals (Loophole Fix #1 & #3)
+  const totalActualExpense = useMemo(() => {
+    return currentMonthRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+  }, [currentMonthRecords]);
+
+  // Derived values from Month Data + Real Totals
+  const income = monthData ? parseFloat(monthData.income || 0) : 0;
+  const emi = monthData ? parseFloat(monthData.emi || 0) : 0;
+  const savingsTarget = monthData ? parseFloat(monthData.savings || 0) : 0;
   
+  // ✅ Loophole Fix #2: Real Savings Calculation
+  const realSavings = income - totalActualExpense - emi;
+  
+  // Calculate Dynamic Score (Loophole Fix #1)
+  const dynamicScore = useMemo(() => {
+    if (!income || income <= 0) return 0;
+
+    let score = 100;
+    
+    // Ratios based on ACTUAL spending
+    const expensePercent = (totalActualExpense / income) * 100;
+    const savingsPercent = (realSavings / income) * 100;
+    const emiPercent = (emi / income) * 100;
+
+    // Penalty for overspending ( >50% of income)
+    if (expensePercent > 50) {
+      score -= (expensePercent - 50); 
+    }
+
+    // Penalty for low savings ( <20% of income)
+    if (savingsPercent < 20) {
+      // If savings are negative (debt), heavy penalty
+      if (savingsPercent < 0) score -= 40; 
+      else score -= (20 - savingsPercent); 
+    }
+
+    // Penalty for high EMI
+    if (emiPercent > 30) {
+      score -= 10;
+    }
+
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }, [income, totalActualExpense, realSavings, emi]);
+
+  // 🤖 Dynamic AI Insight based on Real-time data
+  const aiInsight = useMemo(() => {
+    if (realSavings < 0) return { 
+      text: "⚠️ Bhai iss month overspending ho raha hai! Savings negative jaa rahi hai.", 
+      color: "text-red-400", 
+      bg: "bg-red-500/10",
+      border: "border-red-500/20"
+    };
+    if (realSavings < savingsTarget) return { 
+      text: `Target se ₹${(savingsTarget - realSavings).toLocaleString()} door ho. Thoda control karo!`, 
+      color: "text-amber-400", 
+      bg: "bg-amber-500/10",
+      border: "border-amber-500/20"
+    };
+    if (dynamicScore >= 80) return {
+      text: "Gazab! You are on fire 🔥 Savings target met comfortably.",
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-500/20"
+    };
+    return { 
+      text: monthData?.adviceText || "Keep tracking to stay on top.", 
+      color: "text-violet-200", 
+      bg: "bg-white/5",
+      border: "border-white/10"
+    };
+  }, [realSavings, savingsTarget, dynamicScore, monthData]);
+
+
   const expenseByCategory = useMemo(() => {
     const map = currentMonthRecords.reduce((acc, r) => {
       const cat = r.category || "Other";
@@ -151,15 +225,13 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 👻 Trend Data with Ghost Comparison
   const trendData = useMemo(() => {
     const map = {};
-    
-    // Group by month
     records.forEach(r => {
       if (r.type !== 'expense') return;
       const date = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : null;
       if (!date) return;
       
-      const key = date.toLocaleString('default', { month: 'short' }); // "Jan"
-      const sortKey = date.toISOString().slice(0, 7); // "2024-01" for sorting
+      const key = date.toLocaleString('default', { month: 'short' }); 
+      const sortKey = date.toISOString().slice(0, 7); 
       
       if (!map[sortKey]) map[sortKey] = { month: key, amount: 0, sortKey };
       map[sortKey].amount += r.amount;
@@ -167,27 +239,27 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
     const sortedMonths = Object.values(map).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
-    // Add "prevAmount" for Ghost Comparison
     return sortedMonths.map((item, index) => {
       const prevItem = sortedMonths[index - 1];
       return {
         ...item,
         amount: Math.round(item.amount),
-        prevAmount: prevItem ? Math.round(prevItem.amount) : 0 // Ghost value
+        prevAmount: prevItem ? Math.round(prevItem.amount) : 0 
       };
-    }).slice(-6); // Only last 6 months
+    }).slice(-6); 
   }, [records]);
 
   const COLORS = ["#8b5cf6", "#ec4899", "#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#6b7280"];
 
   const handleSaveTransaction = async () => {
     if (!newTransaction.amount || !newTransaction.description) return;
-    setAddingExpense(true); // Trigger micro-interaction
+    setAddingExpense(true); 
 
     try {
       const selectedDate = new Date(newTransaction.transactionDate + "T12:00:00");
       const createdAt = Timestamp.fromDate(selectedDate);
 
+      // Save Transaction
       await addDoc(collection(db, "users", user.uid, "financial_records"), {
         description: newTransaction.description,
         amount: parseFloat(newTransaction.amount),
@@ -195,6 +267,13 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         category: newTransaction.category,
         createdAt,
       });
+
+      // ✅ Update Score in Firestore (Optional but good for persistency)
+      if (monthData) {
+        const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
+        // We update score in DB just so other views might see it, but UI uses 'dynamicScore'
+        updateDoc(monthRef, { score: dynamicScore }).catch(e => console.log("Score update diff deferred"));
+      }
 
       setShowTransactionForm(false);
       setNewTransaction({
@@ -204,7 +283,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         transactionDate: new Date().toISOString().split("T")[0],
       });
       
-      // Reset interaction after animation time
       setTimeout(() => setAddingExpense(false), 1000);
 
     } catch (error) {
@@ -229,18 +307,35 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     );
   };
 
-  const PlanBar = ({ label, amount, total, colorClass }) => {
+  const PlanBar = ({ label, amount, total, colorClass, isSavings }) => {
     if (!amount) return null;
-    const percent = total ? Math.min(100, Math.round((amount / total) * 100)) : 0;
+    // For savings, we compare Real vs Income, or use the Amount passed
+    const displayAmount = isSavings ? realSavings : amount;
+    const percent = total ? Math.min(100, Math.max(0, Math.round((displayAmount / total) * 100))) : 0;
+    
+    // Color logic for savings: if negative, red; if below target, amber; else normal
+    let finalColor = colorClass;
+    if (isSavings) {
+       if (displayAmount < 0) finalColor = "bg-red-500 shadow-[0_0_10px_-2px_rgba(239,68,68,0.5)]";
+       else if (displayAmount < amount) finalColor = "bg-amber-500 shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]";
+    }
+
     return (
       <div className="mb-4">
         <div className="flex justify-between text-xs mb-1.5">
           <span className="text-gray-400 font-medium">{label}</span>
-          <span className="font-semibold text-white">₹{amount.toLocaleString()}</span>
+          <span className={`font-semibold ${isSavings && displayAmount < amount ? "text-amber-400" : "text-white"}`}>
+            ₹{displayAmount.toLocaleString()} 
+            {isSavings && displayAmount !== amount && (
+               <span className="text-[10px] text-gray-500 ml-1">
+                 (Target: ₹{amount.toLocaleString()})
+               </span>
+            )}
+          </span>
         </div>
         <div className="w-full bg-white/5 rounded-full h-2.5 overflow-hidden">
           <div 
-            className={`h-full rounded-full ${colorClass} transition-all duration-1000 ease-out origin-left scale-x-0 animate-[shimmer_2s_infinite]`} 
+            className={`h-full rounded-full ${finalColor} transition-all duration-1000 ease-out origin-left scale-x-0 animate-[shimmer_2s_infinite]`} 
             style={{ 
               width: `${percent}%`,
               animation: 'growWidth 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards' 
@@ -253,9 +348,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
   // 🌟 Particle Background Component
   const ParticleBackground = ({ score }) => {
-    // Determine color based on score
     const color = score >= 70 ? "bg-emerald-500" : score >= 40 ? "bg-amber-500" : "bg-red-500";
-    
     return (
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         {[...Array(15)].map((_, i) => (
@@ -280,7 +373,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     <div className="min-h-screen bg-[#0a0a0f] text-white font-sans selection:bg-violet-500/30 pb-24 relative overflow-hidden">
       
       {/* 🌟 Particle Background */}
-      <ParticleBackground score={monthData?.score || 0} />
+      <ParticleBackground score={dynamicScore} />
 
       {/* Static Background Ambience */}
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -331,7 +424,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6 relative z-10">
         
-        {/* If no data for this month, show a subtle warning */}
         {!monthData && !loading && (
            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-3 text-amber-200 mb-2 backdrop-blur-md">
              <div className="p-2 bg-amber-500/20 rounded-full"><Activity className="w-4 h-4" /></div>
@@ -343,64 +435,66 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
           {/* 1. Health Score (Left Column) */}
-          {monthData && (
-            <div className="lg:col-span-4 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-violet-500/20 transition-all duration-500 shadow-xl">
-              <div className="absolute inset-0 bg-gradient-to-b from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+          <div className="lg:col-span-4 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-violet-500/20 transition-all duration-500 shadow-xl">
+            <div className="absolute inset-0 bg-gradient-to-b from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            
+            <div className="relative mb-6">
+              <div className="absolute inset-0 bg-violet-500/20 blur-3xl rounded-full animate-pulse"></div>
               
-              <div className="relative mb-6">
-                <div className="absolute inset-0 bg-violet-500/20 blur-3xl rounded-full animate-pulse"></div>
-                
-                {/* Modern Circular Progress */}
-                <div className="relative w-40 h-40 transition-transform duration-700 hover:scale-105">
-                  <svg className="w-full h-full transform -rotate-90">
-                    <circle
-                      cx="80"
-                      cy="80"
-                      r="70"
-                      stroke="currentColor"
-                      strokeWidth="8"
-                      fill="transparent"
-                      className="text-white/5"
-                    />
-                    <circle
-                      cx="80"
-                      cy="80"
-                      r="70"
-                      stroke="currentColor"
-                      strokeWidth="8"
-                      fill="transparent"
-                      strokeDasharray={440}
-                      strokeDashoffset={440 - (440 * (monthData.score || 0)) / 100}
-                      className={`transition-all duration-1000 ease-out ${
-                        monthData.score >= 70 ? "text-emerald-500" : monthData.score >= 40 ? "text-amber-500" : "text-red-500"
-                      }`}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-4xl font-bold text-white tracking-tight animate-[fadeInUp_0.5s_ease-out]">{monthData.score || 0}</span>
-                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-medium mt-1">Score</span>
-                  </div>
+              <div className="relative w-40 h-40 transition-transform duration-700 hover:scale-105">
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle
+                    cx="80"
+                    cy="80"
+                    r="70"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    fill="transparent"
+                    className="text-white/5"
+                  />
+                  <circle
+                    cx="80"
+                    cy="80"
+                    r="70"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    fill="transparent"
+                    strokeDasharray={440}
+                    strokeDashoffset={440 - (440 * dynamicScore) / 100}
+                    className={`transition-all duration-1000 ease-out ${
+                      dynamicScore >= 70 ? "text-emerald-500" : dynamicScore >= 40 ? "text-amber-500" : "text-red-500"
+                    }`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-4xl font-bold text-white tracking-tight animate-[fadeInUp_0.5s_ease-out]">{dynamicScore}</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-widest font-medium mt-1">Score</span>
                 </div>
               </div>
-
-              <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold mb-3 border shadow-sm ${
-                monthData.score >= 70 
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-                  : monthData.score >= 40 
-                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
-                    : "bg-red-500/10 text-red-400 border-red-500/20"
-              }`}>
-                {monthData.score >= 70 ? <CheckCircle className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
-                <span>{monthData.score >= 70 ? "Excellent" : monthData.score >= 40 ? "Average" : "Needs Care"}</span>
-              </div>
-              
-              <h3 className="text-xl font-bold text-white mb-2">{monthData.spenderType || "Analyzing..."}</h3>
-              <p className="text-sm text-gray-400 leading-relaxed max-w-[250px]">
-                "{monthData.adviceText || "Keep tracking your expenses."}"
-              </p>
             </div>
-          )}
+
+            <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold mb-3 border shadow-sm ${
+              dynamicScore >= 70 
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                : dynamicScore >= 40 
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
+                  : "bg-red-500/10 text-red-400 border-red-500/20"
+            }`}>
+              {dynamicScore >= 70 ? <CheckCircle className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
+              <span>{dynamicScore >= 70 ? "Excellent" : dynamicScore >= 40 ? "Average" : "Needs Care"}</span>
+            </div>
+            
+            {/* 🤖 AI Insight Box */}
+            <div className={`w-full p-3 rounded-xl border ${aiInsight.bg} ${aiInsight.border} mt-2 text-left flex gap-3 items-start`}>
+               <div className={`p-1.5 rounded-full bg-black/20 shrink-0 mt-0.5`}>
+                  <AlertTriangle className={`w-3 h-3 ${aiInsight.color}`} />
+               </div>
+               <p className={`text-xs ${aiInsight.color} leading-relaxed`}>
+                 "{aiInsight.text}"
+               </p>
+            </div>
+          </div>
 
           {/* 2. Smart Allocation (Right Column) */}
           {monthData?.budgetPlan && (
@@ -413,40 +507,41 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                 </div>
                 <div>
                   <h2 className="font-bold text-xl text-white">Smart Allocation</h2>
-                  <p className="text-sm text-gray-400">Recommended breakdown for your salary</p>
+                  <p className="text-sm text-gray-400">Actual vs Planned (Includes Fixed EMI)</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
                 <PlanBar 
+                  label="Fixed EMI" 
+                  amount={emi} 
+                  total={income} 
+                  colorClass="bg-gradient-to-r from-gray-600 to-gray-500 shadow-[0_0_10px_-2px_rgba(107,114,128,0.5)]" 
+                />
+                <PlanBar 
+                  label="Savings (Real vs Target)" 
+                  amount={savingsTarget} 
+                  total={income} 
+                  isSavings={true}
+                  colorClass="bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]" 
+                />
+                 <PlanBar 
                   label="Needs (50%)" 
                   amount={monthData.budgetPlan.needs} 
-                  total={monthData.income} 
+                  total={income} 
                   colorClass="bg-gradient-to-r from-blue-600 to-blue-400 shadow-[0_0_10px_-2px_rgba(59,130,246,0.5)]" 
                 />
                 <PlanBar 
                   label="Wants (20%)" 
                   amount={monthData.budgetPlan.wants} 
-                  total={monthData.income} 
+                  total={income} 
                   colorClass="bg-gradient-to-r from-pink-600 to-pink-400 shadow-[0_0_10px_-2px_rgba(236,72,153,0.5)]" 
-                />
-                <PlanBar 
-                  label="Savings (20%)" 
-                  amount={monthData.budgetPlan.savings} 
-                  total={monthData.income} 
-                  colorClass="bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]" 
                 />
                 <PlanBar 
                   label="Investments" 
                   amount={monthData.budgetPlan.investments} 
-                  total={monthData.income} 
+                  total={income} 
                   colorClass="bg-gradient-to-r from-violet-600 to-violet-400 shadow-[0_0_10px_-2px_rgba(139,92,246,0.5)]" 
-                />
-                <PlanBar 
-                  label="Emergency Fund (5%)" 
-                  amount={monthData.budgetPlan.emergency} 
-                  total={monthData.income} 
-                  colorClass="bg-gradient-to-r from-amber-600 to-amber-400 shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]" 
                 />
               </div>
             </div>
@@ -460,7 +555,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
               </div>
               <div>
                 <h2 className="font-bold text-lg text-white">Spending Reality</h2>
-                <p className="text-xs text-gray-400">Actual expenses this month</p>
+                <p className="text-xs text-gray-400">Total Expenses (Excl. EMI)</p>
               </div>
             </div>
 
