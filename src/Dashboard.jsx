@@ -37,7 +37,11 @@ import {
   Calendar,
   AlertTriangle,
   IndianRupee,
-  Sparkles
+  Sparkles,
+  Search,
+  ShoppingCart,
+  Clock,
+  Target
 } from "lucide-react";
 
 import {
@@ -73,9 +77,16 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showMonthSetupForm, setShowMonthSetupForm] = useState(false); 
+  const [showImpulseModal, setShowImpulseModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false); // 🆕 Calendar Modal State
   const [addingExpense, setAddingExpense] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false); 
-  
+  const [checkingImpulse, setCheckingImpulse] = useState(false);
+
+  // Impulse State
+  const [impulseItem, setImpulseItem] = useState({ name: "", price: "" });
+  const [impulseResult, setImpulseResult] = useState(null);
+
   // Setup Form State
   const [setupFormData, setSetupFormData] = useState({
     income: '',
@@ -175,8 +186,8 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // Derived values from Month Data
   const income = monthData ? parseFloat(monthData.income || 0) : 0;
   const emi = monthData ? parseFloat(monthData.emi || 0) : 0;
-  const savingsTarget = monthData ? parseFloat(monthData.savings || 0) : 0;
   
+  // Real Savings = Income - Expenses - EMI
   const realSavings = income - totalActualExpense - emi;
   
   const dynamicScore = useMemo(() => {
@@ -198,37 +209,37 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     return Math.max(0, Math.min(100, Math.round(score)));
   }, [income, totalActualExpense, realSavings, emi]);
 
-  // ✅ Defined aiInsight BEFORE it is used in return
+  // Update Score in DB
+  useEffect(() => {
+    if (monthData && Math.abs(monthData.score - dynamicScore) > 2) {
+       const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
+       updateDoc(monthRef, { score: dynamicScore }).catch(console.error);
+    }
+  }, [dynamicScore, monthData, user.uid, selectedMonthKey]);
+
   const aiInsight = useMemo(() => {
-    const safeDefault = { text: "Please set up your monthly plan.", color: "text-gray-400", bg: "bg-gray-500/10", border: "border-gray-500/20" };
-    
+    const safeDefault = { text: "Set up your plan to get started.", color: "text-gray-400", bg: "bg-gray-500/10", border: "border-gray-500/20" };
     if (!monthData) return safeDefault;
     
     if (realSavings < 0) return { 
-      text: "⚠️ Bhai iss month overspending ho raha hai! Savings negative jaa rahi hai.", 
+      text: "You are overspending! Your savings are negative this month.", 
       color: "text-red-400", 
       bg: "bg-red-500/10",
       border: "border-red-500/20"
     };
-    if (realSavings < savingsTarget) return { 
-      text: `Target se ₹${(savingsTarget - realSavings).toLocaleString()} door ho. Thoda control karo!`, 
-      color: "text-amber-400", 
-      bg: "bg-amber-500/10",
-      border: "border-amber-500/20"
-    };
     if (dynamicScore >= 80) return {
-      text: "Gazab! You are on fire 🔥 Savings target met comfortably.",
+      text: "Great job! You are hitting your savings goals perfectly.",
       color: "text-emerald-400",
       bg: "bg-emerald-500/10",
       border: "border-emerald-500/20"
     };
     return { 
-      text: monthData?.adviceText || "Keep tracking to stay on top.", 
+      text: monthData?.aiAdviceText || "Track expenses to stay on target.", 
       color: "text-violet-200", 
       bg: "bg-white/5",
       border: "border-white/10"
     };
-  }, [realSavings, savingsTarget, dynamicScore, monthData]);
+  }, [realSavings, dynamicScore, monthData]);
 
   const expenseByCategory = useMemo(() => {
     const map = currentMonthRecords.reduce((acc, r) => {
@@ -242,7 +253,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       .sort((a, b) => b.value - a.value);
   }, [currentMonthRecords]);
 
-  // Trend Data Calculation
+  // Trend Data
   const trendData = useMemo(() => {
     const map = {};
     records.forEach(r => {
@@ -270,9 +281,176 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   }, [records]);
 
   // -----------------------------
-  // 💾 Actions
+  // 📆 Calendar View Logic
   // -----------------------------
+  const calendarData = useMemo(() => {
+    const daysInMonth = new Date(selectedMonthKey.split("-")[0], selectedMonthKey.split("-")[1], 0).getDate();
+    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    
+    // Map spending per day
+    const spendingMap = {};
+    currentMonthRecords.forEach(r => {
+      const day = new Date(r.createdAt.seconds * 1000).getDate();
+      if (!spendingMap[day]) {
+        spendingMap[day] = { amount: 0, items: [] };
+      }
+      spendingMap[day].amount += r.amount;
+      spendingMap[day].items.push(`${r.description} (₹${r.amount})`);
+    });
 
+    return days.map(day => ({
+      day,
+      amount: spendingMap[day]?.amount || 0,
+      items: spendingMap[day]?.items || []
+    }));
+  }, [currentMonthRecords, selectedMonthKey]);
+
+  const getDayColor = (amount) => {
+    if (amount === 0) return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20";
+    if (amount < 1000) return "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20";
+    if (amount < 5000) return "bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20";
+    return "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20";
+  };
+
+  // -----------------------------
+  // 🧠 1️⃣ AI Impulse Tracker Logic (Dynamic)
+  // -----------------------------
+  const handleCheckImpulse = async () => {
+    if (!impulseItem.name || !impulseItem.price) return;
+    if (!GEMINI_API_KEY) {
+      alert("Please add GEMINI_API_KEY in code.");
+      return;
+    }
+    setCheckingImpulse(true);
+
+    try {
+      const price = parseFloat(impulseItem.price);
+      
+      // Calculate dynamic metrics
+      const dailyIncome = income / 30; // Approx daily income
+      const hourlyIncome = dailyIncome / 8; // Approx hourly (8h work day)
+      const timeCostHours = price / hourlyIncome;
+      const timeCostDays = price / dailyIncome;
+      
+      // Impact on savings
+      const monthlySavings = monthData.budgetPlan?.savings || 1;
+      const percentOfSavings = Math.round((price / monthlySavings) * 100);
+
+      const prompt = `
+        User earns ₹${income}/month. 
+        Monthly savings goal: ₹${monthlySavings}.
+        User wants to buy "${impulseItem.name}" for ₹${price}.
+        
+        Calculated Context:
+        - Cost in work hours: ${timeCostHours.toFixed(1)} hours
+        - Cost in work days: ${timeCostDays.toFixed(1)} days
+        - % of Monthly Savings: ${percentOfSavings}%
+
+        Task:
+        Analyze this purchase. 
+        1. Give a "Time Cost" statement (e.g., "This costs you 3 days of work").
+        2. Give a "Goal Impact" statement (e.g., "Delays your savings goal by 1 week").
+        3. Give a final "Verdict" (Buy / Wait / Don't Buy).
+        
+        Return JSON format:
+        {
+          "timeCost": "...",
+          "goalImpact": "...",
+          "verdict": "..."
+        }
+      `;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+
+      if (!response.ok) throw new Error("AI API Failed");
+
+      const data = await response.json();
+      let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (text) {
+         text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+         const result = JSON.parse(text);
+         setImpulseResult(result);
+         
+         // Save summary to Firestore history
+         const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
+         await updateDoc(monthRef, { lastImpulseCheck: `${impulseItem.name}: ${result.verdict}` });
+      }
+
+    } catch (error) {
+      console.error("Impulse Check Error:", error);
+      alert("Could not analyze purchase. Please try again.");
+    } finally {
+      setCheckingImpulse(false);
+    }
+  };
+
+  // -----------------------------
+  // 🤖 AI Advice Generation
+  // -----------------------------
+  const handleGenerateAI = async () => {
+    if (!GEMINI_API_KEY) return alert("Add API Key");
+    setGeneratingAI(true);
+
+    try {
+        const promptData = {
+            month: selectedMonthKey,
+            income,
+            emi,
+            realSavings,
+            totalExpense: totalActualExpense,
+            breakdown: expenseByCategory.reduce((acc, curr) => { acc[curr.name] = curr.value; return acc; }, {})
+        };
+
+        const prompt = `
+          You are an AI money coach.
+          Data: ${JSON.stringify(promptData)}
+          
+          Analyze spending. Provide 1 harsh truth and 2 actionable tips.
+          STRICT RULES:
+          1. English only. No Hindi/Hinglish.
+          2. No emojis.
+          3. Max 2 short sentences for advice.
+          
+          Output JSON:
+          {
+            "aiAdviceText": "Your harsh truth here.",
+            "aiSuggestions": ["Tip 1", "Tip 2"]
+          }
+        `;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+
+        const data = await response.json();
+        let text = data.candidates[0].content.parts[0].text;
+        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+        const aiResult = JSON.parse(text);
+
+        const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
+        await setDoc(monthRef, {
+            aiAdviceText: aiResult.aiAdviceText,
+            aiSuggestions: aiResult.aiSuggestions,
+            aiGeneratedAt: new Date().toISOString()
+        }, { merge: true });
+
+    } catch (error) {
+        console.error("AI Error:", error);
+    } finally {
+        setGeneratingAI(false);
+    }
+  };
+
+  // -----------------------------
+  // 💾 Standard Actions
+  // -----------------------------
   const handleSaveTransaction = async () => {
     if (!newTransaction.amount || !newTransaction.description) return;
     setAddingExpense(true); 
@@ -289,23 +467,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         createdAt,
       });
 
-      if (monthData) {
-        const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
-        updateDoc(monthRef, { score: dynamicScore }).catch(e => console.log("Score update deferred"));
-      }
-
       setShowTransactionForm(false);
-      setNewTransaction({
-        description: "",
-        amount: "",
-        category: "Food",
-        transactionDate: new Date().toISOString().split("T")[0],
-      });
-      
+      setNewTransaction({ ...newTransaction, description: "", amount: "" });
       setTimeout(() => setAddingExpense(false), 1000);
-
     } catch (error) {
-      console.error("Error saving transaction:", error);
+      console.error(error);
       setAddingExpense(false);
     }
   };
@@ -317,25 +483,33 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     try {
       const numIncome = parseFloat(setupFormData.income);
       const numEmi = parseFloat(setupFormData.emi) || 0;
-      const numSavings = parseFloat(setupFormData.savings) || 0;
 
-      const needs = Math.round(numIncome * 0.50);
-      const wants = Math.round(numIncome * 0.20);
-      const savings = Math.round(numIncome * 0.20);
-      const emergency = Math.round(numIncome * 0.05);
-      const investments = Math.max(0, numIncome - (needs + wants + savings + emergency));
+      // 📊 Income-Based Smart Allocation
+      let needsPct, wantsPct, savingsPct, emergencyPct;
 
-      const budgetPlan = { needs, wants, savings, emergency, investments };
+      if (numIncome < 30000) {
+        needsPct = 0.60; wantsPct = 0.15; savingsPct = 0.15; emergencyPct = 0.10;
+      } else if (numIncome <= 70000) {
+        needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.20; emergencyPct = 0.10;
+      } else {
+        needsPct = 0.40; wantsPct = 0.20; savingsPct = 0.30; emergencyPct = 0.10;
+      }
+
+      const budgetPlan = {
+        needs: Math.round(numIncome * needsPct),
+        wants: Math.round(numIncome * wantsPct),
+        savings: Math.round(numIncome * savingsPct),
+        emergency: Math.round(numIncome * emergencyPct),
+        investments: 0 
+      };
       
       const dataToSave = {
         income: setupFormData.income,
         emi: setupFormData.emi || '0',
-        savings: setupFormData.savings,
         firstSalary: setupFormData.isFirstSalary,
         score: 100, 
-        expense: 0, 
         budgetPlan,
-        adviceText: "Setup complete! Start tracking your expenses to get AI insights.",
+        adviceText: "Plan created. Stick to your limits.",
         spenderType: "Balanced",
         updatedAt: new Date().toISOString()
       };
@@ -350,10 +524,10 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       await batch.commit();
       
       setShowMonthSetupForm(false);
-      setSetupFormData({ income: '', emi: '', savings: '', isFirstSalary: false });
+      setSetupFormData({ income: '', emi: '', isFirstSalary: false });
 
     } catch (error) {
-      console.error("Error saving month setup:", error);
+      console.error(error);
       alert("Failed to save setup.");
     } finally {
       setSetupLoading(false);
@@ -361,95 +535,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   };
 
   const handleDelete = async (id) => {
-    if (confirm("Delete this transaction?")) {
-      await deleteDoc(doc(db, "users", user.uid, "financial_records", id));
-    }
-  };
-
-  // ✅ Trigger AI Directly from Frontend (Simple Version)
-  const handleGenerateAI = async () => {
-    // Basic check for API key
-    if (!GEMINI_API_KEY) {
-      alert("Please add your Gemini API Key in the code (const GEMINI_API_KEY = '...')");
-      return;
-    }
-
-    setGeneratingAI(true);
-    console.log("🖱️ Generating AI Advice..."); 
-
-    try {
-        // Construct the prompt
-        const promptData = {
-            month: selectedMonthKey,
-            income,
-            emi,
-            realSavings,
-            totalExpense: totalActualExpense,
-            breakdown: expenseByCategory.reduce((acc, curr) => {
-                acc[curr.name] = curr.value;
-                return acc;
-            }, {})
-        };
-
-        const prompt = `
-          You are SmartSalary AI, an Indian finance coach.
-          Analyze this monthly data: ${JSON.stringify(promptData)}
-          
-          Provide output in JSON format:
-          {
-            "aiAdviceText": "A short, punchy English advice (1 sentence).",
-            "aiSuggestions": ["Tip 1", "Tip 2", "Tip 3"]
-          }
-          Do not include markdown code blocks. Just raw JSON.
-        `;
-
-        // Direct fetch to Gemini API (REST)
-        // ✅ Switch to 'gemini-pro' as 'gemini-1.5-flash' might be unavailable/renamed in this context
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
-          })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || `API Error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        
-        if (!data.candidates || data.candidates.length === 0) {
-           throw new Error("No response from AI");
-        }
-
-        let text = data.candidates[0].content.parts[0].text;
-        // Clean markdown if present
-        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-        
-        const aiResult = JSON.parse(text);
-
-        // Save to Firestore so it persists
-        const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
-        await setDoc(monthRef, {
-            aiAdviceText: aiResult.aiAdviceText,
-            aiSuggestions: aiResult.aiSuggestions,
-            aiGeneratedAt: new Date().toISOString()
-        }, { merge: true });
-
-        console.log("✅ AI Advice Saved!");
-
-    } catch (error) {
-        console.error("❌ Failed to generate AI advice:", error);
-        alert(`AI Error: ${error.message}`);
-    } finally {
-        setGeneratingAI(false);
-    }
+    if (confirm("Delete this?")) await deleteDoc(doc(db, "users", user.uid, "financial_records", id));
   };
 
   // -----------------------------
-  // 🎨 UI Components
+  // 🎨 UI Helpers
   // -----------------------------
   const COLORS = ["#8b5cf6", "#ec4899", "#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#6b7280"];
 
@@ -469,20 +559,28 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     const percent = total ? Math.min(100, Math.max(0, Math.round((displayAmount / total) * 100))) : 0;
     
     let finalColor = colorClass;
+    let statusText = "";
+
     if (isSavings) {
-       if (displayAmount < 0) finalColor = "bg-red-500 shadow-[0_0_10px_-2px_rgba(239,68,68,0.5)]";
-       else if (displayAmount < amount) finalColor = "bg-amber-500 shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]";
+       if (displayAmount < 0) {
+         finalColor = "bg-red-500 shadow-[0_0_10px_-2px_rgba(239,68,68,0.5)]";
+         statusText = "(Negative!)";
+       }
+       else if (displayAmount < amount) {
+         finalColor = "bg-amber-500 shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]";
+         statusText = "(Below Target)";
+       }
     }
 
     return (
       <div className="mb-4">
         <div className="flex justify-between text-xs mb-1.5">
-          <span className="text-gray-400 font-medium">{label}</span>
+          <span className="text-gray-400 font-medium">{label} <span className="text-red-400 text-[10px]">{statusText}</span></span>
           <span className={`font-semibold ${isSavings && displayAmount < amount ? "text-amber-400" : "text-white"}`}>
             ₹{displayAmount.toLocaleString()} 
             {isSavings && displayAmount !== amount && (
                <span className="text-[10px] text-gray-500 ml-1">
-                 (Target: ₹{amount.toLocaleString()})
+                 / ₹{amount.toLocaleString()}
                </span>
             )}
           </span>
@@ -544,37 +642,45 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
             </p>
           </div>
 
-          <div className="flex items-center bg-white/5 rounded-full border border-white/5 p-1 shadow-inner relative group">
-            <input 
-              type="month" 
-              value={selectedMonthKey}
-              onChange={handleMonthInput}
-              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
-            />
-            <button 
-              onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} 
-              className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <div className="px-4 flex items-center gap-2 text-sm font-medium min-w-[140px] justify-center text-gray-200 pointer-events-none">
-              <Calendar className="w-3.5 h-3.5 text-violet-400" />
-              {monthName}
-            </div>
-            <button 
-              onClick={(e) => { e.stopPropagation(); changeMonth(1); }}
-              className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+          <div className="flex items-center gap-3">
+             {/* 🧠 1️⃣ Check Impulse Button */}
+             {monthData && (
+               <>
+                 {/* 🆕 Calendar View Button */}
+                 <button 
+                   onClick={() => setShowCalendarModal(true)}
+                   className="hidden sm:flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full text-blue-400 text-sm font-medium hover:bg-blue-500/20 transition-all active:scale-95"
+                 >
+                   <Calendar className="w-4 h-4" /> Calendar
+                 </button>
 
-          <button 
-            onClick={onLogout} 
-            className="hidden sm:block p-2.5 bg-white/5 hover:bg-white/10 rounded-full transition-all hover:scale-105 active:scale-95 border border-white/5 shadow-md"
-          >
-            <LogOut className="w-4 h-4 text-gray-400" />
-          </button>
+                 <button 
+                   onClick={() => setShowImpulseModal(true)}
+                   className="hidden sm:flex items-center gap-2 px-4 py-2 bg-pink-500/10 border border-pink-500/20 rounded-full text-pink-400 text-sm font-medium hover:bg-pink-500/20 transition-all active:scale-95"
+                 >
+                   <ShoppingCart className="w-4 h-4" /> Check Purchase
+                 </button>
+               </>
+             )}
+
+             {/* Month Picker */}
+             <div className="flex items-center bg-white/5 rounded-full border border-white/5 p-1 shadow-inner relative group">
+                <input 
+                  type="month" 
+                  value={selectedMonthKey}
+                  onChange={handleMonthInput}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
+                />
+                <button onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"><ChevronLeft className="w-4 h-4" /></button>
+                <div className="px-4 flex items-center gap-2 text-sm font-medium min-w-[140px] justify-center text-gray-200 pointer-events-none">
+                  <Calendar className="w-3.5 h-3.5 text-violet-400" />
+                  {monthName}
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); changeMonth(1); }} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"><ChevronRight className="w-4 h-4" /></button>
+             </div>
+
+             <button onClick={onLogout} className="p-2.5 bg-white/5 hover:bg-white/10 rounded-full transition-all hover:scale-105 active:scale-95 border border-white/5 shadow-md"><LogOut className="w-4 h-4 text-gray-400" /></button>
+          </div>
         </div>
       </div>
 
@@ -637,12 +743,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                                         "{monthData.aiAdviceText || aiInsight.text}"
                                     </p>
                                     
-                                    {monthData.aiSuggestions && monthData.aiSuggestions.length > 0 && (
-                                        <ul className="text-[10px] text-gray-400 list-disc pl-4 space-y-1 mt-2 border-t border-white/5 pt-2">
-                                            {monthData.aiSuggestions.map((s, i) => (
-                                                <li key={i}>{s}</li>
-                                            ))}
-                                        </ul>
+                                    {/* 🎯 Impulse Impact on Dashboard */}
+                                    {monthData.lastImpulseCheck && (
+                                       <div className="mt-2 pt-2 border-t border-white/5 text-[10px] text-pink-300">
+                                          🛍️ Last Impulse Check: {monthData.lastImpulseCheck}
+                                       </div>
                                     )}
                                 </div>
                             </div>
@@ -656,31 +761,32 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                             {generatingAI ? (
                                 <>
                                     <Loader2 className="w-3 h-3 animate-spin" />
-                                    Analyzing Finances...
+                                    Analyzing...
                                 </>
                             ) : (
                                 <>
                                     <Sparkles className="w-3 h-3 text-violet-400" />
-                                    {monthData.aiAdviceText ? "Regenerate AI Advice" : "Get AI Advice"}
+                                    {monthData.aiAdviceText ? "Regenerate Advice" : "Get AI Coach Advice"}
                                 </>
                             )}
                         </button>
                     </div>
                   </div>
 
-                  {/* 2. Smart Allocation */}
+                  {/* 2. Smart Allocation (Updated Logic) */}
                   <div className="lg:col-span-8 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 relative group hover:border-blue-500/20 transition-all duration-500 shadow-xl">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 group-hover:bg-blue-500/10 transition-colors" />
                     <div className="flex items-center gap-3 mb-8">
                       <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]"><Wallet className="w-6 h-6 text-blue-400" /></div>
-                      <div><h2 className="font-bold text-xl text-white">Smart Allocation</h2><p className="text-sm text-gray-400">Actual vs Planned (Includes Fixed EMI)</p></div>
+                      <div><h2 className="font-bold text-xl text-white">Smart Allocation</h2><p className="text-sm text-gray-400">EMI & Savings are deducted first</p></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
                       <PlanBar label="Fixed EMI" amount={emi} total={income} colorClass="bg-gradient-to-r from-gray-600 to-gray-500 shadow-[0_0_10px_-2px_rgba(107,114,128,0.5)]" />
-                      <PlanBar label="Savings (Real vs Target)" amount={savingsTarget} total={income} isSavings={true} colorClass="bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]" />
-                      <PlanBar label="Needs (50%)" amount={monthData.budgetPlan?.needs} total={income} colorClass="bg-gradient-to-r from-blue-600 to-blue-400 shadow-[0_0_10px_-2px_rgba(59,130,246,0.5)]" />
-                      <PlanBar label="Wants (20%)" amount={monthData.budgetPlan?.wants} total={income} colorClass="bg-gradient-to-r from-pink-600 to-pink-400 shadow-[0_0_10px_-2px_rgba(236,72,153,0.5)]" />
-                      <PlanBar label="Investments" amount={monthData.budgetPlan?.investments} total={income} colorClass="bg-gradient-to-r from-violet-600 to-violet-400 shadow-[0_0_10px_-2px_rgba(139,92,246,0.5)]" />
+                      <PlanBar label="Real Savings" amount={monthData.budgetPlan?.savings} total={income} isSavings={true} colorClass="bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]" />
+                      
+                      <PlanBar label="Needs Budget" amount={monthData.budgetPlan?.needs} total={income} colorClass="bg-gradient-to-r from-blue-600 to-blue-400 shadow-[0_0_10px_-2px_rgba(59,130,246,0.5)]" />
+                      <PlanBar label="Wants Budget" amount={monthData.budgetPlan?.wants} total={income} colorClass="bg-gradient-to-r from-pink-600 to-pink-400 shadow-[0_0_10px_-2px_rgba(236,72,153,0.5)]" />
+                      <PlanBar label="Emergency Fund" amount={monthData.budgetPlan?.emergency} total={income} colorClass="bg-gradient-to-r from-yellow-500 to-amber-500 shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]" />
                     </div>
                   </div>
 
@@ -724,18 +830,12 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                       {trendData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <ComposedChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                            <defs>
-                              <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                              </linearGradient>
-                            </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                             <XAxis dataKey="month" tick={{fill: '#9ca3af', fontSize: 11}} axisLine={false} tickLine={false} dy={10} />
                             <YAxis tick={{fill: '#9ca3af', fontSize: 11}} axisLine={false} tickLine={false} tickFormatter={(value) => `₹${value/1000}k`} />
                             <Tooltip cursor={{stroke: 'rgba(255,255,255,0.1)', strokeWidth: 2}} contentStyle={{ backgroundColor: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} labelStyle={{ color: '#9ca3af', marginBottom: '0.5rem' }} />
                             <Bar dataKey="prevAmount" name="Last Month" fill="#374151" radius={[4, 4, 0, 0]} barSize={20} opacity={0.3} />
-                            <Area type="monotone" dataKey="amount" name="This Month" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorAmount)" />
+                            <Area type="monotone" dataKey="amount" name="This Month" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#8b5cf6)" />
                           </ComposedChart>
                         </ResponsiveContainer>
                       ) : (
@@ -744,7 +844,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                     </div>
                   </div>
 
-                  {/* 5. Transactions List */}
+                  {/* 6. Transactions List */}
                   <div className="lg:col-span-12 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-all duration-500 shadow-xl">
                      <div className="flex items-center justify-between mb-6">
                       <h2 className="font-bold text-lg text-white">Recent Transactions</h2>
@@ -792,204 +892,176 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       </main>
 
       {monthData && (
-        <button
-          onClick={() => setShowTransactionForm(true)}
-          className="fixed bottom-8 right-8 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white p-4 rounded-2xl shadow-[0_4px_20px_-1px_rgba(139,92,246,0.5)] hover:shadow-[0_4px_25px_0px_rgba(139,92,246,0.6)] hover:scale-105 active:scale-95 transition-all z-50 group"
-        >
-          <Plus className="w-7 h-7 group-hover:rotate-90 transition-transform duration-300" />
-        </button>
+        <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-50">
+           {/* Mobile Impulse Check */}
+           <button
+            onClick={() => setShowImpulseModal(true)}
+            className="sm:hidden bg-pink-600 text-white p-4 rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition-all"
+          >
+            <ShoppingCart className="w-6 h-6" />
+          </button>
+
+          <button
+            onClick={() => setShowTransactionForm(true)}
+            className="bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white p-4 rounded-2xl shadow-[0_4px_20px_-1px_rgba(139,92,246,0.5)] hover:shadow-[0_4px_25px_0px_rgba(139,92,246,0.6)] hover:scale-105 active:scale-95 transition-all group"
+          >
+            <Plus className="w-7 h-7 group-hover:rotate-90 transition-transform duration-300" />
+          </button>
+        </div>
       )}
 
+      {/* ✅ Month Setup Modal */}
       {showMonthSetupForm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-lg shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
             <div className="absolute top-0 right-0 w-48 h-48 bg-violet-600/20 rounded-full blur-[60px] -z-10" />
-            
-            <button onClick={() => setShowMonthSetupForm(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-
+            <button onClick={() => setShowMonthSetupForm(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
             <h2 className="text-2xl font-bold text-white mb-2">Setup for {monthName}</h2>
-            <p className="text-gray-400 mb-6 text-sm">Just 3 quick questions to get your financial plan ready.</p>
+            <p className="text-gray-400 mb-6 text-sm">We'll calculate your budget automatically.</p>
 
             <form onSubmit={handleMonthSetup} className="space-y-4">
                <div className="group">
                   <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Total Monthly Income</label>
                   <div className="relative">
                     <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      placeholder="e.g. 50000"
-                      value={setupFormData.income}
-                      onChange={(e) => setSetupFormData({...setupFormData, income: e.target.value})}
-                      className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all"
-                    />
+                    <input type="number" required min="0" placeholder="e.g. 50000" value={setupFormData.income} onChange={(e) => setSetupFormData({...setupFormData, income: e.target.value})} className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all" />
                   </div>
                </div>
-
-               <div className="grid grid-cols-2 gap-4">
-                 <div className="group">
-                    <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Fixed EMI / Rent</label>
-                    <div className="relative">
-                      <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={setupFormData.emi}
-                        onChange={(e) => setSetupFormData({...setupFormData, emi: e.target.value})}
-                        className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all"
-                      />
-                    </div>
-                 </div>
-
-                 <div className="group">
-                    <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Savings Goal</label>
-                    <div className="relative">
-                      <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                      <input
-                        type="number"
-                        required
-                        min="0"
-                        placeholder="e.g. 10000"
-                        value={setupFormData.savings}
-                        onChange={(e) => setSetupFormData({...setupFormData, savings: e.target.value})}
-                        className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all"
-                      />
-                    </div>
-                 </div>
+               <div className="group">
+                  <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Fixed EMI / Rent (Needs)</label>
+                  <div className="relative">
+                    <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input type="number" min="0" placeholder="0" value={setupFormData.emi} onChange={(e) => setSetupFormData({...setupFormData, emi: e.target.value})} className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all" />
+                  </div>
                </div>
-
-               <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                 <div className="text-sm text-gray-300">Is this your first salary?</div>
-                 <input 
-                    type="checkbox" 
-                    checked={setupFormData.isFirstSalary}
-                    onChange={(e) => setSetupFormData({...setupFormData, isFirstSalary: e.target.checked})}
-                    className="w-5 h-5 accent-violet-500 rounded cursor-pointer" 
-                 />
-               </div>
-
-               <button
-                  type="submit"
-                  disabled={setupLoading}
-                  className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-95 transition-all mt-4 disabled:opacity-50"
-                >
-                  {setupLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : "Generate Plan 🚀"}
+               <button type="submit" disabled={setupLoading} className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-95 transition-all mt-4 disabled:opacity-50">
+                  {setupLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : "Generate AI Plan 🚀"}
                 </button>
             </form>
           </div>
         </div>
       )}
 
-      {showTransactionForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <div className="bg-[#121215] border-t sm:border border-white/10 rounded-t-[2rem] sm:rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in slide-in-from-bottom duration-300 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/10 rounded-full blur-[80px] -z-10" />
-            
-            <div className="flex justify-between items-center mb-8">
-              <div>
-                <h3 className="text-2xl font-bold text-white">Add Expense</h3>
-                <p className="text-sm text-gray-400">Track where your money goes</p>
+      {/* 🆕 Impulse Check Modal - More Dynamic */}
+      {showImpulseModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
+            <button onClick={() => {setShowImpulseModal(false); setImpulseResult(null); setImpulseItem({name:"", price:""})}} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
+            <h2 className="text-2xl font-bold text-white mb-2">Check Before Buying 🛍️</h2>
+            <p className="text-gray-400 mb-6 text-sm">See the real cost of your impulse.</p>
+
+            {!impulseResult ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-gray-400 uppercase tracking-wider ml-1">Item Name</label>
+                  <input type="text" placeholder="e.g. New Headphones" value={impulseItem.name} onChange={(e) => setImpulseItem({...impulseItem, name: e.target.value})} className="w-full mt-1 p-4 bg-black/30 border border-white/10 rounded-2xl text-white focus:border-pink-500 outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 uppercase tracking-wider ml-1">Price</label>
+                  <input type="number" placeholder="2000" value={impulseItem.price} onChange={(e) => setImpulseItem({...impulseItem, price: e.target.value})} className="w-full mt-1 p-4 bg-black/30 border border-white/10 rounded-2xl text-white focus:border-pink-500 outline-none" />
+                </div>
+                <button onClick={handleCheckImpulse} disabled={checkingImpulse} className="w-full py-4 bg-pink-600 text-white rounded-2xl font-bold hover:bg-pink-700 transition-colors mt-2 disabled:opacity-50">
+                  {checkingImpulse ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Analyze Impact"}
+                </button>
               </div>
-              <button 
-                onClick={() => setShowTransactionForm(false)} 
-                className="p-2 bg-white/5 hover:bg-white/10 rounded-full border border-white/5 transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-400" />
-              </button>
+            ) : (
+              <div className="text-left space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
+                      <div className="flex items-center gap-2 mb-1 text-gray-400 text-xs uppercase tracking-wider">
+                         <Clock className="w-3 h-3 text-pink-400"/> Time Cost
+                      </div>
+                      <p className="text-white font-bold">{impulseResult.timeCost}</p>
+                   </div>
+                   <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
+                      <div className="flex items-center gap-2 mb-1 text-gray-400 text-xs uppercase tracking-wider">
+                         <Target className="w-3 h-3 text-amber-400"/> Goal Impact
+                      </div>
+                      <p className="text-white font-bold">{impulseResult.goalImpact}</p>
+                   </div>
+                </div>
+
+                <div className="p-4 bg-pink-500/10 border border-pink-500/20 rounded-2xl">
+                  <p className="text-pink-300 font-medium text-lg leading-relaxed text-center">"{impulseResult.verdict}"</p>
+                </div>
+                <button onClick={() => setShowImpulseModal(false)} className="w-full py-3 bg-white/10 text-white rounded-xl hover:bg-white/20">Close</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 🗓️ Calendar View Modal */}
+      {showCalendarModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-2xl shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
+            <button onClick={() => setShowCalendarModal(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20 shadow-sm">
+                <Calendar className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <h2 className="font-bold text-lg text-white">Spending Calendar</h2>
+                <p className="text-xs text-gray-400">Daily spending intensity</p>
+              </div>
             </div>
-
-            <div className="space-y-6">
-              <div>
-                <label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Title</label>
-                <input
-                  type="text"
-                  required
-                  className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none text-lg transition-all placeholder:text-gray-700 shadow-inner"
-                  placeholder="e.g. Starbucks, Uber, Groceries"
-                  value={newTransaction.description}
-                  onChange={(e) => setNewTransaction({ ...newTransaction, description: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Amount</label>
-                <div className="relative mt-2">
-                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 text-xl font-light">₹</span>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    className="w-full p-4 pl-10 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none text-xl font-bold transition-all placeholder:text-gray-700 shadow-inner"
-                    placeholder="0.00"
-                    value={newTransaction.amount}
-                    onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
-                  />
+            
+            <div className="grid grid-cols-7 gap-2 md:gap-3">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                <div key={day} className="text-center text-xs text-gray-500 font-medium py-2">{day}</div>
+              ))}
+              {/* Offset for first day of month */}
+              {Array.from({ length: new Date(selectedMonthKey + "-01").getDay() }).map((_, i) => (
+                <div key={`empty-${i}`} className="aspect-square" />
+              ))}
+              {calendarData.map(({ day, amount, items }) => (
+                <div 
+                  key={day} 
+                  className={`aspect-square rounded-xl border flex flex-col items-center justify-center relative group transition-all hover:scale-105 ${getDayColor(amount)}`}
+                >
+                  <span className="text-xs font-bold">{day}</span>
+                  {amount > 0 && <span className="text-[10px] opacity-80">₹{amount >= 1000 ? (amount/1000).toFixed(1) + 'k' : amount}</span>}
+                  
+                  {/* Tooltip */}
+                  {amount > 0 && (
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max max-w-[200px] px-3 py-2 bg-gray-900 border border-white/10 rounded-xl text-xs text-white opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-2xl">
+                      <div className="font-bold border-b border-white/10 pb-1 mb-1 text-center">₹{amount.toLocaleString()}</div>
+                      <div className="space-y-1">
+                        {items.slice(0, 3).map((item, idx) => (
+                          <div key={idx} className="truncate text-gray-300">{item}</div>
+                        ))}
+                        {items.length > 3 && <div className="text-gray-500 text-[10px] italic">+{items.length - 3} more</div>}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Date</label>
-                  <input
-                    type="date"
-                    required
-                    className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all text-sm shadow-inner"
-                    value={newTransaction.transactionDate}
-                    onChange={(e) => setNewTransaction({ ...newTransaction, transactionDate: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Category</label>
-                  <div className="relative">
-                    <select
-                      className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none appearance-none transition-all text-sm shadow-inner"
-                      value={newTransaction.category}
-                      onChange={(e) => setNewTransaction({ ...newTransaction, category: e.target.value })}
-                    >
-                      {categories.map(c => <option key={c.name} value={c.name} className="bg-zinc-900">{c.name}</option>)}
-                    </select>
-                    <ArrowDown className="absolute right-4 top-[60%] -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleSaveTransaction}
-                className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-[0_4px_20px_-1px_rgba(139,92,246,0.5)] hover:shadow-[0_4px_25px_0px_rgba(139,92,246,0.6)] active:scale-[0.98] transition-all mt-4"
-              >
-                Save Transaction
-              </button>
+              ))}
             </div>
           </div>
         </div>
       )}
-      
-      {/* Animation Styles */}
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% { transform: translate(0, 0); opacity: 0.1; }
-          25% { transform: translate(10px, -10px); opacity: 0.2; }
-          50% { transform: translate(-5px, 15px); opacity: 0.15; }
-          75% { transform: translate(-15px, -5px); opacity: 0.25; }
-        }
-        @keyframes shimmer {
-          0% { opacity: 0.8; }
-          50% { opacity: 1; box-shadow: 0 0 10px rgba(255,255,255,0.2); }
-          100% { opacity: 0.8; }
-        }
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes growWidth {
-          from { transform: scaleX(0); }
-          to { transform: scaleX(1); }
-        }
-      `}</style>
+
+      {/* Add Expense Modal */}
+      {showTransactionForm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-[#121215] border-t sm:border border-white/10 rounded-t-[2rem] sm:rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in slide-in-from-bottom duration-300 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/10 rounded-full blur-[80px] -z-10" />
+            <div className="flex justify-between items-center mb-8">
+              <div><h3 className="text-2xl font-bold text-white">Add Expense</h3><p className="text-sm text-gray-400">Track where your money goes</p></div>
+              <button onClick={() => setShowTransactionForm(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full border border-white/5 transition-colors"><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="space-y-6">
+              <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Title</label><input type="text" required className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none text-lg transition-all placeholder:text-gray-700 shadow-inner" placeholder="e.g. Starbucks" value={newTransaction.description} onChange={(e) => setNewTransaction({ ...newTransaction, description: e.target.value })} /></div>
+              <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Amount</label><div className="relative mt-2"><span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 text-xl font-light">₹</span><input type="number" required min="0" className="w-full p-4 pl-10 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none text-xl font-bold transition-all placeholder:text-gray-700 shadow-inner" placeholder="0.00" value={newTransaction.amount} onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })} /></div></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Date</label><input type="date" required className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all text-sm shadow-inner" value={newTransaction.transactionDate} onChange={(e) => setNewTransaction({ ...newTransaction, transactionDate: e.target.value })} /></div>
+                <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Category</label><div className="relative"><select className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none appearance-none transition-all text-sm shadow-inner" value={newTransaction.category} onChange={(e) => setNewTransaction({ ...newTransaction, category: e.target.value })}>{categories.map(c => <option key={c.name} value={c.name} className="bg-zinc-900">{c.name}</option>)}</select><ArrowDown className="absolute right-4 top-[60%] -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" /></div></div>
+              </div>
+              <button onClick={handleSaveTransaction} className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-[0_4px_20px_-1px_rgba(139,92,246,0.5)] hover:shadow-[0_4px_25px_0px_rgba(139,92,246,0.6)] active:scale-[0.98] transition-all mt-4">Save Transaction</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
