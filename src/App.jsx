@@ -13,45 +13,50 @@ import Dashboard from './Dashboard';
 function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const [monthSetupComplete, setMonthSetupComplete] = useState(false);
   const [currentPage, setCurrentPage] = useState('home');
 
+  // ✅ Get current month key (YYYY-MM)
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+
   useEffect(() => {
-    let userUnsubscribe = null;
+    let monthUnsubscribe = null;
 
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
 
       if (currentUser) {
-        // ✅ FIXED: Use currentUser.uid, not user.uid
-        const userDocRef = doc(db, 'users', currentUser.uid);
+        // ✅ NEW LOGIC: Check if THIS month's plan exists
+        const monthDocRef = doc(db, 'users', currentUser.uid, 'months', currentMonthKey);
         
-        userUnsubscribe = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists() && docSnap.data().income) {
-            setOnboardingComplete(true);
+        monthUnsubscribe = onSnapshot(monthDocRef, (docSnap) => {
+          // If the document for this month exists, the user has done the setup
+          if (docSnap.exists()) {
+            setMonthSetupComplete(true);
           } else {
-            setOnboardingComplete(false);
+            setMonthSetupComplete(false);
           }
         }, (error) => {
-          console.warn("Profile check failed:", error);
-          setOnboardingComplete(false);
+          console.warn("Month check failed:", error);
+          setMonthSetupComplete(false);
         });
       } else {
-        if (userUnsubscribe) {
-          userUnsubscribe();
-          userUnsubscribe = null;
+        // Cleanup if logged out
+        if (monthUnsubscribe) {
+          monthUnsubscribe();
+          monthUnsubscribe = null;
         }
-        setOnboardingComplete(false);
+        setMonthSetupComplete(false);
         setCurrentPage('home'); 
       }
     });
 
     return () => {
       authUnsubscribe();
-      if (userUnsubscribe) userUnsubscribe();
+      if (monthUnsubscribe) monthUnsubscribe();
     };
-  }, []);
+  }, [currentMonthKey]);
 
   if (authLoading) {
     return (
@@ -62,10 +67,12 @@ function App() {
   }
 
   if (user) {
-    if (!onboardingComplete) {
+    // ✅ If this month is not set up, show the Form
+    if (!monthSetupComplete) {
       return <FinancialForm />;
     }
-    return <Dashboard user={user} onLogout={() => auth.signOut()} />;
+    // ✅ Otherwise, show Dashboard for the current month
+    return <Dashboard user={user} currentMonthKey={currentMonthKey} onLogout={() => auth.signOut()} />;
   }
 
   const renderPage = () => {
