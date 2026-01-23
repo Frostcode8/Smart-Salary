@@ -8,7 +8,9 @@ import {
   doc,
   Timestamp,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  setDoc,
+  writeBatch
 } from "firebase/firestore";
 import { db } from "./firebase.js";
 
@@ -33,7 +35,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  IndianRupee,
+  Sparkles
 } from "lucide-react";
 
 import {
@@ -58,12 +62,25 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 🗓️ Month Selection State
   const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey);
   
-  const [monthData, setMonthData] = useState(null);
+  const [monthData, setMonthData] = useState(null); // The monthly setup doc
+  const [loadingMonthData, setLoadingMonthData] = useState(true); // Specific loading state for month doc
+
   const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingRecords, setLoadingRecords] = useState(true);
+  
   const [showTransactionForm, setShowTransactionForm] = useState(false);
+  const [showMonthSetupForm, setShowMonthSetupForm] = useState(false); // New state for setup modal
   const [addingExpense, setAddingExpense] = useState(false);
   
+  // Setup Form State
+  const [setupFormData, setSetupFormData] = useState({
+    income: '',
+    emi: '',
+    savings: '',
+    isFirstSalary: false
+  });
+  const [setupLoading, setSetupLoading] = useState(false);
+
   // Format the selected month name
   const monthName = new Date(selectedMonthKey + "-01").toLocaleString('default', { month: 'long', year: 'numeric' });
   const userName = user.displayName ? user.displayName.split(' ')[0] : 'User';
@@ -93,10 +110,18 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     setSelectedMonthKey(newKey);
   };
 
+  const handleMonthInput = (e) => {
+    setSelectedMonthKey(e.target.value);
+  }
+
+  // -----------------------------
+  // 🔥 Firestore Listeners
+  // -----------------------------
   useEffect(() => {
     if (!user) return;
 
     // 1. Fetch Plan for SELECTED month
+    setLoadingMonthData(true);
     const monthDocRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
     const unsubMonth = onSnapshot(monthDocRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -104,9 +129,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       } else {
         setMonthData(null); 
       }
+      setLoadingMonthData(false);
     });
 
-    // 2. Fetch ALL transactions
+    // 2. Fetch ALL transactions (Global)
+    // Optimization: In a real app, query by date range. Keeping simple for now.
     const q = query(
       collection(db, "users", user.uid, "financial_records"),
       orderBy("createdAt", "desc")
@@ -118,7 +145,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         ...d.data(),
       }));
       setRecords(data);
-      setLoading(false);
+      setLoadingRecords(false);
     });
 
     return () => {
@@ -126,6 +153,10 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       unsubRecords();
     };
   }, [user, selectedMonthKey]); 
+
+  // -----------------------------
+  // 📊 Logic & Computations
+  // -----------------------------
 
   // Filter records for the selected month
   const currentMonthRecords = useMemo(() => {
@@ -137,52 +168,40 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     });
   }, [records, selectedMonthKey]);
 
-  // 🔥 1. Calculate Real Totals (Loophole Fix #1 & #3)
   const totalActualExpense = useMemo(() => {
     return currentMonthRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
   }, [currentMonthRecords]);
 
-  // Derived values from Month Data + Real Totals
+  // Derived values from Month Data
+  // Default to 0 if data missing (which triggers empty state UI)
   const income = monthData ? parseFloat(monthData.income || 0) : 0;
   const emi = monthData ? parseFloat(monthData.emi || 0) : 0;
   const savingsTarget = monthData ? parseFloat(monthData.savings || 0) : 0;
   
-  // ✅ Loophole Fix #2: Real Savings Calculation
   const realSavings = income - totalActualExpense - emi;
   
-  // Calculate Dynamic Score (Loophole Fix #1)
   const dynamicScore = useMemo(() => {
     if (!income || income <= 0) return 0;
 
     let score = 100;
     
-    // Ratios based on ACTUAL spending
     const expensePercent = (totalActualExpense / income) * 100;
     const savingsPercent = (realSavings / income) * 100;
     const emiPercent = (emi / income) * 100;
 
-    // Penalty for overspending ( >50% of income)
-    if (expensePercent > 50) {
-      score -= (expensePercent - 50); 
-    }
-
-    // Penalty for low savings ( <20% of income)
+    if (expensePercent > 50) score -= (expensePercent - 50); 
     if (savingsPercent < 20) {
-      // If savings are negative (debt), heavy penalty
       if (savingsPercent < 0) score -= 40; 
       else score -= (20 - savingsPercent); 
     }
-
-    // Penalty for high EMI
-    if (emiPercent > 30) {
-      score -= 10;
-    }
+    if (emiPercent > 30) score -= 10;
 
     return Math.max(0, Math.min(100, Math.round(score)));
   }, [income, totalActualExpense, realSavings, emi]);
 
-  // 🤖 Dynamic AI Insight based on Real-time data
   const aiInsight = useMemo(() => {
+    if (!monthData) return { text: "Please set up your monthly plan.", color: "text-gray-400" };
+    
     if (realSavings < 0) return { 
       text: "⚠️ Bhai iss month overspending ho raha hai! Savings negative jaa rahi hai.", 
       color: "text-red-400", 
@@ -209,7 +228,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     };
   }, [realSavings, savingsTarget, dynamicScore, monthData]);
 
-
   const expenseByCategory = useMemo(() => {
     const map = currentMonthRecords.reduce((acc, r) => {
       const cat = r.category || "Other";
@@ -222,7 +240,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       .sort((a, b) => b.value - a.value);
   }, [currentMonthRecords]);
 
-  // 👻 Trend Data with Ghost Comparison
+  // Trend Data Calculation
   const trendData = useMemo(() => {
     const map = {};
     records.forEach(r => {
@@ -249,7 +267,9 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     }).slice(-6); 
   }, [records]);
 
-  const COLORS = ["#8b5cf6", "#ec4899", "#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#6b7280"];
+  // -----------------------------
+  // 💾 Actions
+  // -----------------------------
 
   const handleSaveTransaction = async () => {
     if (!newTransaction.amount || !newTransaction.description) return;
@@ -259,7 +279,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       const selectedDate = new Date(newTransaction.transactionDate + "T12:00:00");
       const createdAt = Timestamp.fromDate(selectedDate);
 
-      // Save Transaction
       await addDoc(collection(db, "users", user.uid, "financial_records"), {
         description: newTransaction.description,
         amount: parseFloat(newTransaction.amount),
@@ -268,11 +287,10 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         createdAt,
       });
 
-      // ✅ Update Score in Firestore (Optional but good for persistency)
+      // Update score in month doc if it exists
       if (monthData) {
         const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
-        // We update score in DB just so other views might see it, but UI uses 'dynamicScore'
-        updateDoc(monthRef, { score: dynamicScore }).catch(e => console.log("Score update diff deferred"));
+        updateDoc(monthRef, { score: dynamicScore }).catch(e => console.log("Score update deferred"));
       }
 
       setShowTransactionForm(false);
@@ -291,11 +309,75 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     }
   };
 
+  const handleMonthSetup = async (e) => {
+    e.preventDefault();
+    setSetupLoading(true);
+
+    try {
+      const numIncome = parseFloat(setupFormData.income);
+      const numEmi = parseFloat(setupFormData.emi) || 0;
+      const numSavings = parseFloat(setupFormData.savings) || 0;
+
+      // Basic Budget Logic
+      const needs = Math.round(numIncome * 0.50);
+      const wants = Math.round(numIncome * 0.20);
+      const savings = Math.round(numIncome * 0.20);
+      const emergency = Math.round(numIncome * 0.05);
+      const investments = Math.max(0, numIncome - (needs + wants + savings + emergency));
+
+      const budgetPlan = { needs, wants, savings, emergency, investments };
+      
+      // Basic Advice
+      let adviceText = "Good start! Stick to the plan.";
+      if (numEmi > numIncome * 0.3) adviceText = "High EMI detected. Be careful with other expenses.";
+
+      const dataToSave = {
+        income: setupFormData.income,
+        emi: setupFormData.emi || '0',
+        savings: setupFormData.savings,
+        firstSalary: setupFormData.isFirstSalary,
+        score: 100, // Start fresh
+        expense: 0, // Starts at 0
+        budgetPlan,
+        adviceText,
+        spenderType: "Balanced",
+        updatedAt: new Date().toISOString()
+      };
+
+      const batch = writeBatch(db);
+      const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
+      
+      // Also update main user doc for global context if needed
+      // (Optional depending on app logic, keeping it safe)
+      const userRef = doc(db, 'users', user.uid);
+
+      batch.set(monthRef, dataToSave, { merge: true });
+      batch.set(userRef, dataToSave, { merge: true }); // Updates 'current' profile
+
+      await batch.commit();
+      
+      setShowMonthSetupForm(false);
+      setSetupFormData({ income: '', emi: '', savings: '', isFirstSalary: false });
+
+    } catch (error) {
+      console.error("Error saving month setup:", error);
+      alert("Failed to save setup.");
+    } finally {
+      setSetupLoading(false);
+    }
+  };
+
+
   const handleDelete = async (id) => {
     if (confirm("Delete this transaction?")) {
       await deleteDoc(doc(db, "users", user.uid, "financial_records", id));
     }
   };
+
+  // -----------------------------
+  // 🎨 UI Components
+  // -----------------------------
+  const COLORS = ["#8b5cf6", "#ec4899", "#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#6b7280"];
 
   const getCategoryIcon = (catName) => {
     const category = categories.find(c => c.name === catName) || categories[categories.length - 1];
@@ -309,11 +391,9 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
   const PlanBar = ({ label, amount, total, colorClass, isSavings }) => {
     if (!amount) return null;
-    // For savings, we compare Real vs Income, or use the Amount passed
     const displayAmount = isSavings ? realSavings : amount;
     const percent = total ? Math.min(100, Math.max(0, Math.round((displayAmount / total) * 100))) : 0;
     
-    // Color logic for savings: if negative, red; if below target, amber; else normal
     let finalColor = colorClass;
     if (isSavings) {
        if (displayAmount < 0) finalColor = "bg-red-500 shadow-[0_0_10px_-2px_rgba(239,68,68,0.5)]";
@@ -346,7 +426,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     );
   };
 
-  // 🌟 Particle Background Component
   const ParticleBackground = ({ score }) => {
     const color = score >= 70 ? "bg-emerald-500" : score >= 40 ? "bg-amber-500" : "bg-red-500";
     return (
@@ -373,7 +452,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     <div className="min-h-screen bg-[#0a0a0f] text-white font-sans selection:bg-violet-500/30 pb-24 relative overflow-hidden">
       
       {/* 🌟 Particle Background */}
-      <ParticleBackground score={dynamicScore} />
+      {monthData && <ParticleBackground score={dynamicScore} />}
 
       {/* Static Background Ambience */}
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -394,20 +473,27 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
           </div>
 
           {/* 🗓️ MONTH SELECTOR */}
-          <div className="flex items-center bg-white/5 rounded-full border border-white/5 p-1 shadow-inner">
+          <div className="flex items-center bg-white/5 rounded-full border border-white/5 p-1 shadow-inner relative group">
+             {/* Invisible Month Picker Overlay for cleaner UI */}
+            <input 
+              type="month" 
+              value={selectedMonthKey}
+              onChange={handleMonthInput}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
+            />
             <button 
-              onClick={() => changeMonth(-1)}
-              className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors"
+              onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} // Prevent picker opening on arrow click
+              className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <div className="px-4 flex items-center gap-2 text-sm font-medium min-w-[140px] justify-center text-gray-200">
+            <div className="px-4 flex items-center gap-2 text-sm font-medium min-w-[140px] justify-center text-gray-200 pointer-events-none">
               <Calendar className="w-3.5 h-3.5 text-violet-400" />
               {monthName}
             </div>
             <button 
-              onClick={() => changeMonth(1)}
-              className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors"
+              onClick={(e) => { e.stopPropagation(); changeMonth(1); }}
+              className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -424,321 +510,281 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6 relative z-10">
         
-        {!monthData && !loading && (
-           <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-3 text-amber-200 mb-2 backdrop-blur-md">
-             <div className="p-2 bg-amber-500/20 rounded-full"><Activity className="w-4 h-4" /></div>
-             <p className="text-sm">No budget plan found for {monthName}. You are viewing raw expenses only.</p>
-           </div>
-        )}
-
-        {/* Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* 1. Health Score (Left Column) */}
-          <div className="lg:col-span-4 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-violet-500/20 transition-all duration-500 shadow-xl">
-            <div className="absolute inset-0 bg-gradient-to-b from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            
-            <div className="relative mb-6">
-              <div className="absolute inset-0 bg-violet-500/20 blur-3xl rounded-full animate-pulse"></div>
-              
-              <div className="relative w-40 h-40 transition-transform duration-700 hover:scale-105">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle
-                    cx="80"
-                    cy="80"
-                    r="70"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                    fill="transparent"
-                    className="text-white/5"
-                  />
-                  <circle
-                    cx="80"
-                    cy="80"
-                    r="70"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                    fill="transparent"
-                    strokeDasharray={440}
-                    strokeDashoffset={440 - (440 * dynamicScore) / 100}
-                    className={`transition-all duration-1000 ease-out ${
-                      dynamicScore >= 70 ? "text-emerald-500" : dynamicScore >= 40 ? "text-amber-500" : "text-red-500"
-                    }`}
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-bold text-white tracking-tight animate-[fadeInUp_0.5s_ease-out]">{dynamicScore}</span>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-widest font-medium mt-1">Score</span>
-                </div>
-              </div>
+        {/* ⚠️ Empty State Logic */}
+        {!loadingMonthData && !monthData ? (
+          <div className="col-span-full flex flex-col items-center justify-center py-16 border-2 border-dashed border-violet-500/30 rounded-3xl bg-violet-500/5 animate-in fade-in zoom-in duration-300">
+            <div className="w-16 h-16 rounded-full bg-violet-500/10 flex items-center justify-center mb-4 ring-4 ring-violet-500/5">
+              <Sparkles className="w-8 h-8 text-violet-400" />
             </div>
-
-            <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold mb-3 border shadow-sm ${
-              dynamicScore >= 70 
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-                : dynamicScore >= 40 
-                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
-                  : "bg-red-500/10 text-red-400 border-red-500/20"
-            }`}>
-              {dynamicScore >= 70 ? <CheckCircle className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
-              <span>{dynamicScore >= 70 ? "Excellent" : dynamicScore >= 40 ? "Average" : "Needs Care"}</span>
-            </div>
-            
-            {/* 🤖 AI Insight Box */}
-            <div className={`w-full p-3 rounded-xl border ${aiInsight.bg} ${aiInsight.border} mt-2 text-left flex gap-3 items-start`}>
-               <div className={`p-1.5 rounded-full bg-black/20 shrink-0 mt-0.5`}>
-                  <AlertTriangle className={`w-3 h-3 ${aiInsight.color}`} />
-               </div>
-               <p className={`text-xs ${aiInsight.color} leading-relaxed`}>
-                 "{aiInsight.text}"
-               </p>
-            </div>
-          </div>
-
-          {/* 2. Smart Allocation (Right Column) */}
-          {monthData?.budgetPlan && (
-            <div className="lg:col-span-8 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 relative group hover:border-blue-500/20 transition-all duration-500 shadow-xl">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 group-hover:bg-blue-500/10 transition-colors" />
-              
-              <div className="flex items-center gap-3 mb-8">
-                <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]">
-                  <Wallet className="w-6 h-6 text-blue-400" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-xl text-white">Smart Allocation</h2>
-                  <p className="text-sm text-gray-400">Actual vs Planned (Includes Fixed EMI)</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
-                <PlanBar 
-                  label="Fixed EMI" 
-                  amount={emi} 
-                  total={income} 
-                  colorClass="bg-gradient-to-r from-gray-600 to-gray-500 shadow-[0_0_10px_-2px_rgba(107,114,128,0.5)]" 
-                />
-                <PlanBar 
-                  label="Savings (Real vs Target)" 
-                  amount={savingsTarget} 
-                  total={income} 
-                  isSavings={true}
-                  colorClass="bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]" 
-                />
-                 <PlanBar 
-                  label="Needs (50%)" 
-                  amount={monthData.budgetPlan.needs} 
-                  total={income} 
-                  colorClass="bg-gradient-to-r from-blue-600 to-blue-400 shadow-[0_0_10px_-2px_rgba(59,130,246,0.5)]" 
-                />
-                <PlanBar 
-                  label="Wants (20%)" 
-                  amount={monthData.budgetPlan.wants} 
-                  total={income} 
-                  colorClass="bg-gradient-to-r from-pink-600 to-pink-400 shadow-[0_0_10px_-2px_rgba(236,72,153,0.5)]" 
-                />
-                <PlanBar 
-                  label="Investments" 
-                  amount={monthData.budgetPlan.investments} 
-                  total={income} 
-                  colorClass="bg-gradient-to-r from-violet-600 to-violet-400 shadow-[0_0_10px_-2px_rgba(139,92,246,0.5)]" 
-                />
-              </div>
-            </div>
-          )}
-
-          {/* 3. Reality Check (Pie Chart) - With Micro-Interaction Pulse */}
-          <div className="lg:col-span-5 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col hover:border-pink-500/20 transition-all duration-500 shadow-xl">
-            <div className="flex items-center gap-3 mb-2">
-              <div className={`p-2.5 bg-pink-500/10 rounded-xl border border-pink-500/20 shadow-sm ${addingExpense ? 'animate-pulse ring-2 ring-pink-500/30' : ''}`}>
-                <Activity className="w-5 h-5 text-pink-400" />
-              </div>
-              <div>
-                <h2 className="font-bold text-lg text-white">Spending Reality</h2>
-                <p className="text-xs text-gray-400">Total Expenses (Excl. EMI)</p>
-              </div>
-            </div>
-
-            <div className="my-6">
-              <span className={`text-4xl font-bold text-white tracking-tight inline-block transition-transform duration-300 ${addingExpense ? 'scale-110 text-pink-300' : ''}`}>
-                ₹{totalActualExpense.toLocaleString()}
-              </span>
-              <span className="text-sm text-gray-500 ml-2">total spent</span>
-            </div>
-
-            <div className={`h-[250px] w-full mt-auto transition-all duration-700 ${addingExpense ? 'rotate-3 scale-105' : ''}`}>
-              {expenseByCategory.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={expenseByCategory}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {expenseByCategory.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)' }}
-                      itemStyle={{ color: '#fff' }}
-                      formatter={(value) => `₹${value.toLocaleString()}`}
-                    />
-                    <Legend 
-                      verticalAlign="bottom" 
-                      height={36} 
-                      iconType="circle"
-                      formatter={(value) => <span className="text-gray-400 text-xs ml-1">{value}</span>}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
-                    <TrendingUp className="w-6 h-6 opacity-30" />
-                  </div>
-                  <p className="text-sm">No expenses recorded yet</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 4. The Trend (Area Chart) - With Ghost Comparison */}
-          <div className="lg:col-span-7 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col hover:border-amber-500/20 transition-all duration-500 shadow-xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 shadow-sm">
-                <TrendingUp className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <h2 className="font-bold text-lg text-white">Spending Trend</h2>
-                <p className="text-xs text-gray-400">vs Previous Month (Ghost Bar)</p>
-              </div>
-            </div>
-
-            <div className="h-[300px] w-full mt-auto">
-              {trendData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis 
-                      dataKey="month" 
-                      tick={{fill: '#9ca3af', fontSize: 11}} 
-                      axisLine={false} 
-                      tickLine={false}
-                      dy={10}
-                    />
-                    <YAxis 
-                      tick={{fill: '#9ca3af', fontSize: 11}} 
-                      axisLine={false} 
-                      tickLine={false}
-                      tickFormatter={(value) => `₹${value/1000}k`}
-                    />
-                    <Tooltip 
-                      cursor={{stroke: 'rgba(255,255,255,0.1)', strokeWidth: 2}}
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)' }}
-                      itemStyle={{ color: '#fff' }}
-                      labelStyle={{ color: '#9ca3af', marginBottom: '0.5rem' }}
-                    />
-                    
-                    {/* Ghost Bar (Previous Month) */}
-                    <Bar dataKey="prevAmount" name="Last Month" fill="#374151" radius={[4, 4, 0, 0]} barSize={20} opacity={0.3} />
-                    
-                    {/* Current Trend Area */}
-                    <Area 
-                      type="monotone" 
-                      dataKey="amount" 
-                      name="This Month"
-                      stroke="#8b5cf6" 
-                      strokeWidth={3}
-                      fillOpacity={1} 
-                      fill="url(#colorAmount)" 
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-gray-500 text-sm">
-                  Start adding expenses to see your trend
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* 5. Transactions List */}
-        <div className="bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-all duration-500 shadow-xl">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="font-bold text-lg text-white">Recent Transactions</h2>
-            <button 
-              onClick={() => setShowTransactionForm(true)}
-              className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-4 py-2 rounded-xl transition active:scale-95 flex items-center gap-2 text-sm font-medium shadow-[0_4px_10px_-1px_rgba(0,0,0,0.3)]"
+            <h2 className="text-2xl font-bold text-white mb-2">Setup {monthName}</h2>
+            <p className="text-gray-400 text-center max-w-md mb-8 px-4">
+              It seems you haven't planned your finances for {monthName} yet. 
+              Takes less than 30 seconds to set up!
+            </p>
+            <button
+              onClick={() => setShowMonthSetupForm(true)}
+              className="px-8 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-xl font-bold shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add New</span>
+              Fill Setup for {monthName} <ArrowDown className="w-4 h-4" />
             </button>
           </div>
+        ) : (
+          <>
+             {/* Only show dashboard content if monthData exists */}
+             {monthData && (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  
+                  {/* 1. Health Score */}
+                  <div className="lg:col-span-4 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-violet-500/20 transition-all duration-500 shadow-xl">
+                    <div className="absolute inset-0 bg-gradient-to-b from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    
+                    <div className="relative mb-6">
+                      <div className="absolute inset-0 bg-violet-500/20 blur-3xl rounded-full animate-pulse"></div>
+                      <div className="relative w-40 h-40 transition-transform duration-700 hover:scale-105">
+                        <svg className="w-full h-full transform -rotate-90">
+                          <circle cx="80" cy="80" r="70" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white/5" />
+                          <circle cx="80" cy="80" r="70" stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={440} strokeDashoffset={440 - (440 * dynamicScore) / 100} className={`transition-all duration-1000 ease-out ${dynamicScore >= 70 ? "text-emerald-500" : dynamicScore >= 40 ? "text-amber-500" : "text-red-500"}`} strokeLinecap="round" />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-4xl font-bold text-white tracking-tight animate-[fadeInUp_0.5s_ease-out]">{dynamicScore}</span>
+                          <span className="text-[10px] text-gray-400 uppercase tracking-widest font-medium mt-1">Score</span>
+                        </div>
+                      </div>
+                    </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {loading ? (
-              <div className="col-span-full flex justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-violet-500"/>
-              </div>
-            ) : currentMonthRecords.length === 0 ? (
-              <div className="col-span-full flex flex-col items-center justify-center py-12 border border-dashed border-white/10 rounded-2xl bg-white/5">
-                <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-3">
-                  <Wallet className="w-6 h-6 text-gray-500" />
-                </div>
-                <p className="text-gray-400 font-medium">No expenses yet this month</p>
-                <p className="text-gray-600 text-sm">Your wallet is safe... for now.</p>
-              </div>
-            ) : (
-              currentMonthRecords.map((record) => (
-                <div key={record.id} className="bg-[#18181b]/50 border border-white/5 p-4 rounded-2xl flex items-start justify-between group hover:bg-white/5 hover:border-white/10 transition-all duration-300 shadow-sm hover:shadow-md">
-                  <div className="flex items-start gap-4">
-                    {getCategoryIcon(record.category)}
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm text-white truncate pr-2">{record.description}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {record.category}
-                      </p>
-                      <p className="text-[10px] text-gray-600 mt-1 font-medium uppercase tracking-wide">
-                        {new Date(record.createdAt?.seconds * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                      </p>
+                    <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold mb-3 border shadow-sm ${dynamicScore >= 70 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : dynamicScore >= 40 ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+                      {dynamicScore >= 70 ? <CheckCircle className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
+                      <span>{dynamicScore >= 70 ? "Excellent" : dynamicScore >= 40 ? "Average" : "Needs Care"}</span>
+                    </div>
+                    
+                    <div className={`w-full p-3 rounded-xl border ${aiInsight.bg} ${aiInsight.border} mt-2 text-left flex gap-3 items-start`}>
+                      <div className={`p-1.5 rounded-full bg-black/20 shrink-0 mt-0.5`}><AlertTriangle className={`w-3 h-3 ${aiInsight.color}`} /></div>
+                      <p className={`text-xs ${aiInsight.color} leading-relaxed`}>"{aiInsight.text}"</p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className="font-bold text-sm text-white whitespace-nowrap">-₹{record.amount.toLocaleString()}</span>
-                    <button 
-                      onClick={() => handleDelete(record.id)}
-                      className="text-gray-600 hover:text-red-400 hover:bg-red-400/10 p-1.5 rounded-lg transition opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+
+                  {/* 2. Smart Allocation */}
+                  <div className="lg:col-span-8 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 relative group hover:border-blue-500/20 transition-all duration-500 shadow-xl">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 group-hover:bg-blue-500/10 transition-colors" />
+                    <div className="flex items-center gap-3 mb-8">
+                      <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]"><Wallet className="w-6 h-6 text-blue-400" /></div>
+                      <div><h2 className="font-bold text-xl text-white">Smart Allocation</h2><p className="text-sm text-gray-400">Actual vs Planned (Includes Fixed EMI)</p></div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
+                      <PlanBar label="Fixed EMI" amount={emi} total={income} colorClass="bg-gradient-to-r from-gray-600 to-gray-500 shadow-[0_0_10px_-2px_rgba(107,114,128,0.5)]" />
+                      <PlanBar label="Savings (Real vs Target)" amount={savingsTarget} total={income} isSavings={true} colorClass="bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]" />
+                      <PlanBar label="Needs (50%)" amount={monthData.budgetPlan?.needs} total={income} colorClass="bg-gradient-to-r from-blue-600 to-blue-400 shadow-[0_0_10px_-2px_rgba(59,130,246,0.5)]" />
+                      <PlanBar label="Wants (20%)" amount={monthData.budgetPlan?.wants} total={income} colorClass="bg-gradient-to-r from-pink-600 to-pink-400 shadow-[0_0_10px_-2px_rgba(236,72,153,0.5)]" />
+                      <PlanBar label="Investments" amount={monthData.budgetPlan?.investments} total={income} colorClass="bg-gradient-to-r from-violet-600 to-violet-400 shadow-[0_0_10px_-2px_rgba(139,92,246,0.5)]" />
+                    </div>
+                  </div>
+
+                  {/* 3. Reality Check */}
+                  <div className="lg:col-span-5 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col hover:border-pink-500/20 transition-all duration-500 shadow-xl">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className={`p-2.5 bg-pink-500/10 rounded-xl border border-pink-500/20 shadow-sm ${addingExpense ? 'animate-pulse ring-2 ring-pink-500/30' : ''}`}><Activity className="w-5 h-5 text-pink-400" /></div>
+                      <div><h2 className="font-bold text-lg text-white">Spending Reality</h2><p className="text-xs text-gray-400">Total Expenses (Excl. EMI)</p></div>
+                    </div>
+                    <div className="my-6">
+                      <span className={`text-4xl font-bold text-white tracking-tight inline-block transition-transform duration-300 ${addingExpense ? 'scale-110 text-pink-300' : ''}`}>₹{totalActualExpense.toLocaleString()}</span>
+                      <span className="text-sm text-gray-500 ml-2">total spent</span>
+                    </div>
+                    <div className={`h-[250px] w-full mt-auto transition-all duration-700 ${addingExpense ? 'rotate-3 scale-105' : ''}`}>
+                      {expenseByCategory.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={expenseByCategory} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                              {expenseByCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} formatter={(value) => `₹${value.toLocaleString()}`} />
+                            <Legend verticalAlign="bottom" height={36} iconType="circle" formatter={(value) => <span className="text-gray-400 text-xs ml-1">{value}</span>} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-3">
+                          <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center"><TrendingUp className="w-6 h-6 opacity-30" /></div>
+                          <p className="text-sm">No expenses recorded yet</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 4. The Trend */}
+                  <div className="lg:col-span-7 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col hover:border-amber-500/20 transition-all duration-500 shadow-xl">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 shadow-sm"><TrendingUp className="w-5 h-5 text-amber-400" /></div>
+                      <div><h2 className="font-bold text-lg text-white">Spending Trend</h2><p className="text-xs text-gray-400">vs Previous Month (Ghost Bar)</p></div>
+                    </div>
+                    <div className="h-[300px] w-full mt-auto">
+                      {trendData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                            <XAxis dataKey="month" tick={{fill: '#9ca3af', fontSize: 11}} axisLine={false} tickLine={false} dy={10} />
+                            <YAxis tick={{fill: '#9ca3af', fontSize: 11}} axisLine={false} tickLine={false} tickFormatter={(value) => `₹${value/1000}k`} />
+                            <Tooltip cursor={{stroke: 'rgba(255,255,255,0.1)', strokeWidth: 2}} contentStyle={{ backgroundColor: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px' }} itemStyle={{ color: '#fff' }} labelStyle={{ color: '#9ca3af', marginBottom: '0.5rem' }} />
+                            <Bar dataKey="prevAmount" name="Last Month" fill="#374151" radius={[4, 4, 0, 0]} barSize={20} opacity={0.3} />
+                            <Area type="monotone" dataKey="amount" name="This Month" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorAmount)" />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-gray-500 text-sm">Start adding expenses to see your trend</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 5. Transactions List */}
+                  <div className="lg:col-span-12 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-all duration-500 shadow-xl">
+                     <div className="flex items-center justify-between mb-6">
+                      <h2 className="font-bold text-lg text-white">Recent Transactions</h2>
+                      <button 
+                        onClick={() => setShowTransactionForm(true)}
+                        className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-4 py-2 rounded-xl transition active:scale-95 flex items-center gap-2 text-sm font-medium shadow-[0_4px_10px_-1px_rgba(0,0,0,0.3)]"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add New</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {loadingRecords ? (
+                        <div className="col-span-full flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-violet-500"/></div>
+                      ) : currentMonthRecords.length === 0 ? (
+                        <div className="col-span-full flex flex-col items-center justify-center py-12 border border-dashed border-white/10 rounded-2xl bg-white/5">
+                          <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-3"><Wallet className="w-6 h-6 text-gray-500" /></div>
+                          <p className="text-gray-400 font-medium">No expenses yet this month</p>
+                        </div>
+                      ) : (
+                        currentMonthRecords.map((record) => (
+                          <div key={record.id} className="bg-[#18181b]/50 border border-white/5 p-4 rounded-2xl flex items-start justify-between group hover:bg-white/5 hover:border-white/10 transition-all duration-300 shadow-sm hover:shadow-md">
+                            <div className="flex items-start gap-4">
+                              {getCategoryIcon(record.category)}
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm text-white truncate pr-2">{record.description}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{record.category}</p>
+                                <p className="text-[10px] text-gray-600 mt-1 font-medium uppercase tracking-wide">{new Date(record.createdAt?.seconds * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                              <span className="font-bold text-sm text-white whitespace-nowrap">-₹{record.amount.toLocaleString()}</span>
+                              <button onClick={() => handleDelete(record.id)} className="text-gray-600 hover:text-red-400 hover:bg-red-400/10 p-1.5 rounded-lg transition opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
+             )}
+          </>
+        )}
       </main>
 
-      {/* Floating Action Button - Dark Mode Neumorphism */}
-      <button
-        onClick={() => setShowTransactionForm(true)}
-        className="fixed bottom-8 right-8 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white p-4 rounded-2xl shadow-[0_4px_20px_-1px_rgba(139,92,246,0.5)] hover:shadow-[0_4px_25px_0px_rgba(139,92,246,0.6)] hover:scale-105 active:scale-95 transition-all z-50 group"
-      >
-        <Plus className="w-7 h-7 group-hover:rotate-90 transition-transform duration-300" />
-      </button>
+      {/* Floating Action Button (Only show if month is set up) */}
+      {monthData && (
+        <button
+          onClick={() => setShowTransactionForm(true)}
+          className="fixed bottom-8 right-8 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white p-4 rounded-2xl shadow-[0_4px_20px_-1px_rgba(139,92,246,0.5)] hover:shadow-[0_4px_25px_0px_rgba(139,92,246,0.6)] hover:scale-105 active:scale-95 transition-all z-50 group"
+        >
+          <Plus className="w-7 h-7 group-hover:rotate-90 transition-transform duration-300" />
+        </button>
+      )}
+
+      {/* ✅ Month Setup Modal */}
+      {showMonthSetupForm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-lg shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
+            {/* Modal BG Effect */}
+            <div className="absolute top-0 right-0 w-48 h-48 bg-violet-600/20 rounded-full blur-[60px] -z-10" />
+            
+            <button onClick={() => setShowMonthSetupForm(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+
+            <h2 className="text-2xl font-bold text-white mb-2">Setup for {monthName}</h2>
+            <p className="text-gray-400 mb-6 text-sm">Just 3 quick questions to get your financial plan ready.</p>
+
+            <form onSubmit={handleMonthSetup} className="space-y-4">
+               {/* Income */}
+               <div className="group">
+                  <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Total Monthly Income</label>
+                  <div className="relative">
+                    <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      placeholder="e.g. 50000"
+                      value={setupFormData.income}
+                      onChange={(e) => setSetupFormData({...setupFormData, income: e.target.value})}
+                      className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all"
+                    />
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-4">
+                 {/* EMI */}
+                 <div className="group">
+                    <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Fixed EMI / Rent</label>
+                    <div className="relative">
+                      <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={setupFormData.emi}
+                        onChange={(e) => setSetupFormData({...setupFormData, emi: e.target.value})}
+                        className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all"
+                      />
+                    </div>
+                 </div>
+
+                 {/* Savings Target */}
+                 <div className="group">
+                    <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Savings Goal</label>
+                    <div className="relative">
+                      <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                      <input
+                        type="number"
+                        required
+                        min="0"
+                        placeholder="e.g. 10000"
+                        value={setupFormData.savings}
+                        onChange={(e) => setSetupFormData({...setupFormData, savings: e.target.value})}
+                        className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all"
+                      />
+                    </div>
+                 </div>
+               </div>
+
+               {/* First Salary Toggle */}
+               <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                 <div className="text-sm text-gray-300">Is this your first salary?</div>
+                 <input 
+                    type="checkbox" 
+                    checked={setupFormData.isFirstSalary}
+                    onChange={(e) => setSetupFormData({...setupFormData, isFirstSalary: e.target.checked})}
+                    className="w-5 h-5 accent-violet-500 rounded cursor-pointer" 
+                 />
+               </div>
+
+               <button
+                  type="submit"
+                  disabled={setupLoading}
+                  className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-95 transition-all mt-4 disabled:opacity-50"
+                >
+                  {setupLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : "Generate Plan 🚀"}
+                </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Add Expense Modal */}
       {showTransactionForm && (
