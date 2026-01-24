@@ -1,51 +1,96 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   DollarSign, TrendingUp, Shield, Sparkles, ArrowRight, 
-  Lock, CreditCard
+  Lock, CreditCard, MousePointer2, Briefcase, Zap, CheckCircle2
 } from 'lucide-react';
+
+// 🔢 Animated Counter Component
+const CountUp = ({ end, duration = 1000 }) => {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let startTime = null;
+    const animate = (currentTime) => {
+      if (!startTime) startTime = currentTime;
+      const progress = Math.min((currentTime - startTime) / duration, 1);
+      // Easing function for smooth stop
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      
+      setCount(Math.floor(easeOut * end));
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+    requestAnimationFrame(animate);
+  }, [end, duration]);
+
+  return <span className="tabular-nums">₹{count.toLocaleString('en-IN')}</span>;
+};
 
 export default function LandingPage({ onNavigate }) {
   const [salary, setSalary] = useState('');
-  const [city, setCity] = useState('');
+  const [fixedExpenses, setFixedExpenses] = useState('');
+  const [goal, setGoal] = useState('save'); // 'save', 'debt', 'invest'
   const [showTeaser, setShowTeaser] = useState(false);
-  const [offsetY, setOffsetY] = useState(0);
+  const [potentialSavings, setPotentialSavings] = useState(0);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
+  // 🖱️ Interactive Background Logic
   useEffect(() => {
-    const handleScroll = () => setOffsetY(window.scrollY);
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    const handleMouseMove = (e) => {
+      // Normalize coordinates (-1 to 1)
+      const x = (e.clientX / window.innerWidth) * 2 - 1;
+      const y = (e.clientY / window.innerHeight) * 2 - 1;
+      setMousePos({ x, y });
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  const cities = [
-    { name: 'Mumbai', avgSavings: 4800 },
-    { name: 'Delhi', avgSavings: 5200 },
-    { name: 'Bangalore', avgSavings: 6500 },
-    { name: 'Hyderabad', avgSavings: 5800 },
-    { name: 'Pune', avgSavings: 5000 },
-    { name: 'Chennai', avgSavings: 4600 },
-    { name: 'Kolkata', avgSavings: 3800 },
-    { name: 'Other', avgSavings: 4000 }
-  ];
-
   const calculateTeaser = () => {
-    if (!salary || !city) return;
-    const salaryNum = parseInt(salary);
-    if (salaryNum < 10000) return;
+    if (!salary) return;
+    const salaryNum = parseFloat(salary);
+    const expenseNum = parseFloat(fixedExpenses) || 0;
+    
+    if (isNaN(salaryNum) || salaryNum < 1000) return;
+
+    // 🧮 Logic: Target 20% savings minimum, adjusted by reality
+    let projected = salaryNum * 0.20;
+    const remaining = salaryNum - expenseNum;
+    
+    // Safety cap: Don't promise more than 50% of remaining cash
+    if (projected > remaining) {
+      projected = Math.max(0, remaining * 0.5);
+    }
+
+    setPotentialSavings(Math.round(projected));
     setShowTeaser(true);
   };
 
-  const getCityData = () => {
-    return cities.find(c => c.name === city) || cities[cities.length - 1];
+  const getTeaserText = () => {
+    if (goal === 'debt') return <>Free up <span className="text-emerald-400 font-bold"><CountUp end={potentialSavings} /></span> monthly to crush loans.</>;
+    if (goal === 'invest') return <>Invest <span className="text-emerald-400 font-bold"><CountUp end={potentialSavings} /></span> monthly for early retirement.</>;
+    return <>Save <span className="text-emerald-400 font-bold"><CountUp end={potentialSavings} /></span> more every single month.</>;
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white overflow-hidden selection:bg-violet-500/30 font-sans relative">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40vw] h-[40vw] bg-violet-600/20 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40vw] h-[40vw] bg-fuchsia-600/20 rounded-full blur-[120px]" />
+    <div className="min-h-screen bg-[#0a0a0f] text-white overflow-hidden selection:bg-violet-500/30 font-sans relative flex flex-col">
+      
+      {/* 🌌 Interactive Background */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div 
+          className="absolute top-[-10%] left-[-10%] w-[45vw] h-[45vw] bg-violet-600/20 rounded-full blur-[100px] transition-transform duration-100 ease-out"
+          style={{ transform: `translate(${mousePos.x * -20}px, ${mousePos.y * -20}px)` }}
+        />
+        <div 
+          className="absolute bottom-[-10%] right-[-10%] w-[45vw] h-[45vw] bg-fuchsia-600/20 rounded-full blur-[100px] transition-transform duration-100 ease-out"
+          style={{ transform: `translate(${mousePos.x * 20}px, ${mousePos.y * 20}px)` }}
+        />
       </div>
 
-      <nav className="relative z-50 px-6 py-6 flex justify-between items-center max-w-7xl mx-auto">
+      {/* 🧭 Navbar */}
+      <nav className="relative z-50 px-6 py-6 flex justify-between items-center max-w-7xl mx-auto w-full">
         <div className="flex items-center gap-3 cursor-pointer group">
           <div className="relative">
             <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl blur opacity-75 group-hover:opacity-100 transition duration-300"></div>
@@ -65,53 +110,95 @@ export default function LandingPage({ onNavigate }) {
         </button>
       </nav>
 
-      <main className="relative z-10 max-w-7xl mx-auto px-6 pt-10 pb-20">
-        <div className="grid lg:grid-cols-2 gap-16 items-center">
-          <div className="space-y-8 text-center lg:text-left pt-10">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-violet-500/20 text-violet-300 text-sm font-medium">
-              <Sparkles className="w-4 h-4" />
-              <span>India's First AI Money Coach</span>
+      {/* 🏗️ Main Content */}
+      <main className="relative z-10 max-w-7xl mx-auto px-6 flex-grow flex flex-col justify-center w-full pb-10">
+        <div className="grid lg:grid-cols-2 gap-16 items-center w-full">
+          
+          {/* 👈 Left Column: Text & Steps */}
+          <div className="space-y-10 text-center lg:text-left">
+            <div className="space-y-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-violet-500/20 text-violet-300 text-sm font-medium animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <Sparkles className="w-4 h-4" />
+                <span>India's First AI Money Coach</span>
+              </div>
+              
+              <h1 className="text-5xl lg:text-7xl font-bold leading-[1.1] tracking-tight">
+                Master Your Money <br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-fuchsia-400 to-white">
+                  Like a Pro
+                </span>
+              </h1>
+              
+              <p className="text-xl text-gray-400 max-w-xl mx-auto lg:mx-0 leading-relaxed">
+                Stop guessing. Get a personalized financial roadmap powered by smart algorithms to hit your goals faster.
+              </p>
             </div>
-            
-            <h1 className="text-5xl lg:text-7xl font-bold leading-[1.1] tracking-tight">
-              Master Your Money <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-fuchsia-400 to-white">
-                Like a Pro
-              </span>
-            </h1>
-            
-            <p className="text-xl text-gray-400 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-              Stop guessing where your salary goes. Get a personalized financial roadmap powered by data from thousands of successful savers.
-            </p>
 
-            <div className="flex flex-wrap justify-center lg:justify-start gap-4">
+            {/* 👇 How it works Icons */}
+            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-6 sm:gap-12 pt-4">
               {[
-                { icon: Shield, text: "Bank-Grade Security" },
-                { icon: TrendingUp, text: "Smart Growth" },
-                { icon: CreditCard, text: "Expense Tracking" }
-              ].map((feature, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-gray-400 bg-white/5 px-4 py-2 rounded-lg border border-white/5">
-                  <feature.icon className="w-4 h-4 text-violet-400" />
-                  <span className="text-sm">{feature.text}</span>
+                { icon: Briefcase, label: "Enter Salary" },
+                { icon: Zap, label: "AI Analysis" },
+                { icon: CheckCircle2, label: "Get Roadmap" }
+              ].map((step, i) => (
+                <div key={i} className="flex flex-col items-center gap-3 group">
+                   <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center group-hover:scale-110 group-hover:bg-violet-500/20 group-hover:border-violet-500/50 transition-all duration-300">
+                     <step.icon className="w-5 h-5 text-gray-400 group-hover:text-violet-300" />
+                   </div>
+                   <span className="text-sm font-medium text-gray-400 group-hover:text-white transition-colors">{step.label}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-tr from-violet-600/30 to-fuchsia-600/30 rounded-[30px] blur-2xl transform rotate-3 scale-105" />
-            
-            <div className="bg-[#0f111a]/80 backdrop-blur-xl border border-white/10 rounded-[30px] p-8 relative overflow-hidden">
-              <h2 className="text-2xl font-bold mb-8 flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-violet-500/20">
-                  <TrendingUp className="w-6 h-6 text-violet-400" />
+          {/* 👉 Right Column: The Form Card */}
+          <div className="relative perspective-1000">
+            {/* 🖼️ Dashboard Preview Blur (The "What you get") */}
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 rounded-[30px] opacity-40 blur-sm transform scale-95 translate-y-4 -z-10 border border-white/10 flex flex-col p-4 overflow-hidden pointer-events-none">
+               {/* Fake UI Elements */}
+               <div className="h-8 w-1/3 bg-white/10 rounded-lg mb-4"></div>
+               <div className="flex gap-4 mb-4">
+                 <div className="h-32 w-1/2 bg-emerald-500/20 rounded-xl"></div>
+                 <div className="h-32 w-1/2 bg-blue-500/20 rounded-xl"></div>
+               </div>
+               <div className="h-full w-full bg-white/5 rounded-xl"></div>
+            </div>
+
+            {/* Main Card */}
+            <div className="bg-[#0f111a]/90 backdrop-blur-xl border border-white/10 rounded-[30px] p-8 shadow-2xl relative overflow-hidden transition-transform duration-300 hover:scale-[1.01]">
+              
+              {/* 🎯 Goal Selector */}
+              <div className="mb-8">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 block">What is your primary goal?</label>
+                <div className="grid grid-cols-3 gap-2 p-1 bg-black/20 rounded-xl">
+                  {[
+                    { id: 'save', label: 'Save Money', icon: DollarSign },
+                    { id: 'debt', label: 'Clear Debt', icon: Shield },
+                    { id: 'invest', label: 'Invest', icon: TrendingUp }
+                  ].map((g) => (
+                    <button
+                      key={g.id}
+                      onClick={() => setGoal(g.id)}
+                      className={`flex flex-col items-center gap-1 py-3 px-2 rounded-lg text-xs font-medium transition-all ${
+                        goal === g.id 
+                          ? 'bg-white/10 text-white shadow-sm' 
+                          : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                      }`}
+                    >
+                      <g.icon className={`w-4 h-4 ${goal === g.id ? 'text-violet-400' : ''}`} />
+                      {g.label}
+                    </button>
+                  ))}
                 </div>
-                Salary Optimizer
-              </h2>
+              </div>
 
               <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300 ml-1">Monthly Income (₹)</label>
+                {/* 💰 Salary Input & Slider */}
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <label className="text-sm font-medium text-gray-300">Monthly Income</label>
+                    <span className="text-xs text-violet-400 font-mono bg-violet-500/10 px-2 py-0.5 rounded">₹{Number(salary).toLocaleString()}</span>
+                  </div>
                   <div className="relative group">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">₹</span>
                     <input
@@ -119,53 +206,67 @@ export default function LandingPage({ onNavigate }) {
                       value={salary}
                       onChange={(e) => setSalary(e.target.value)}
                       className="w-full bg-black/20 border border-white/10 rounded-xl py-4 pl-10 pr-4 text-xl font-semibold text-white placeholder-gray-600 outline-none focus:border-violet-500/50 transition-all"
-                      placeholder="50,000"
+                      placeholder="50000"
+                    />
+                  </div>
+                  <input 
+                    type="range" 
+                    min="10000" max="500000" step="5000" 
+                    value={salary || 10000} 
+                    onChange={(e) => setSalary(e.target.value)}
+                    className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                  />
+                </div>
+
+                {/* 🏠 Expenses Input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300 ml-1">Fixed Expenses (EMI / Rent)</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">₹</span>
+                    <input
+                      type="number"
+                      value={fixedExpenses}
+                      onChange={(e) => setFixedExpenses(e.target.value)}
+                      className="w-full bg-black/20 border border-white/10 rounded-xl py-4 pl-10 pr-4 text-xl font-semibold text-white placeholder-gray-600 outline-none focus:border-violet-500/50 transition-all"
+                      placeholder="15000"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300 ml-1">Current City</label>
-                  <div className="relative">
-                    <select
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="w-full bg-black/20 border border-white/10 rounded-xl py-4 px-4 text-lg text-white outline-none appearance-none cursor-pointer focus:border-violet-500/50 transition-all"
-                    >
-                      <option value="" className="bg-slate-900 text-gray-400">Select your city</option>
-                      {cities.map(c => (
-                        <option key={c.name} value={c.name} className="bg-slate-900">{c.name}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <ArrowRight className="w-5 h-5 text-gray-400 rotate-90" />
-                    </div>
-                  </div>
-                </div>
-
+                {/* Action Button */}
                 <button
                   onClick={calculateTeaser}
-                  disabled={!salary || !city}
-                  className="w-full mt-4 py-4 bg-white text-black rounded-xl font-bold text-lg hover:bg-gray-100 transform hover:-translate-y-1 transition-all duration-300 shadow-xl shadow-white/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  disabled={!salary}
+                  className="w-full mt-2 py-4 bg-white text-black rounded-xl font-bold text-lg hover:bg-gray-100 transform hover:-translate-y-1 transition-all duration-300 shadow-xl shadow-white/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2 group"
                 >
-                  Generate Plan
+                  Generate Plan <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
+
+                {/* 🔒 Privacy Micro-copy */}
+                <div className="flex items-center justify-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider">
+                  <Lock className="w-3 h-3" />
+                  No Spam. Data stays private.
+                </div>
               </div>
 
+              {/* ✨ Teaser Overlay */}
               {showTeaser && (
-                <div className="absolute inset-0 z-20 backdrop-blur-xl bg-[#0f111a]/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-300">
-                  <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-violet-500/30">
+                <div className="absolute inset-0 z-20 backdrop-blur-xl bg-[#0f111a]/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+                   {/* Confetti-like glow */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-violet-500/10 to-transparent animate-pulse" />
+                  
+                  <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-violet-500/30 scale-110">
                     <Lock className="w-8 h-8 text-white" />
                   </div>
                   
                   <h3 className="text-2xl font-bold text-white mb-2">Plan Ready!</h3>
-                  <p className="text-gray-400 mb-8 max-w-xs">
-                    We've analyzed data for {city}. You could be saving <span className="text-emerald-400 font-bold">₹{getCityData().avgSavings.toLocaleString('en-IN')}</span> more every month.
+                  <p className="text-gray-300 mb-8 max-w-xs text-lg leading-relaxed">
+                    {getTeaserText()}
                   </p>
 
                   <button
                     onClick={() => onNavigate('register')}
-                    className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl font-bold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02] transition-all"
+                    className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl font-bold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02] transition-all relative z-10"
                   >
                     Unlock Full Report Free
                   </button>
@@ -178,20 +279,16 @@ export default function LandingPage({ onNavigate }) {
             </div>
           </div>
         </div>
-
-        <div className="mt-24 grid md:grid-cols-3 gap-8">
-          {[
-            { label: "Assets Managed", value: "₹2.4Cr+", color: "text-emerald-400" },
-            { label: "Active Users", value: "10,000+", color: "text-violet-400" },
-            { label: "App Rating", value: "4.9/5", color: "text-yellow-400" }
-          ].map((stat, i) => (
-            <div key={i} className="bg-white/5 border border-white/5 p-6 rounded-2xl text-center hover:bg-white/10 transition-all cursor-default">
-              <div className={`text-4xl font-bold mb-2 ${stat.color} drop-shadow-sm`}>{stat.value}</div>
-              <div className="text-gray-400 font-medium">{stat.label}</div>
-            </div>
-          ))}
-        </div>
       </main>
+
+      {/* 🦶 Minimal Footer */}
+      <footer className="relative z-10 py-6 text-center text-xs text-gray-600 border-t border-white/5">
+         <div className="flex justify-center gap-6">
+            <span className="cursor-pointer hover:text-gray-400">Privacy Policy</span>
+            <span className="cursor-pointer hover:text-gray-400">Terms of Service</span>
+            <span>© 2024 SmartSalary</span>
+         </div>
+      </footer>
     </div>
   );
 }

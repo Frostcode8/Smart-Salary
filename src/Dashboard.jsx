@@ -10,7 +10,9 @@ import {
   deleteDoc,
   updateDoc,
   setDoc,
-  writeBatch
+  writeBatch,
+  arrayUnion,
+  getDoc
 } from "firebase/firestore";
 import { db } from "./firebase.js"; 
 
@@ -38,10 +40,10 @@ import {
   AlertTriangle,
   IndianRupee,
   Sparkles,
-  Search,
   ShoppingCart,
   Clock,
-  Target
+  Target,
+  GraduationCap // Added icon for First Salary mode
 } from "lucide-react";
 
 import {
@@ -63,7 +65,7 @@ import {
 } from "recharts";
 
 // ⚠️ PASTE YOUR GEMINI API KEY HERE
-const GEMINI_API_KEY = "AIzaSyCLwpS2vuV4wDGQdWcQHcgD1jf479kIw0U"; 
+const GEMINI_API_KEY = "AIzaSyB8LuU9OMZpuiHLDVffQjOFQtAGyO6Utbo"; 
 
 const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 🗓️ Month Selection State
@@ -78,7 +80,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showMonthSetupForm, setShowMonthSetupForm] = useState(false); 
   const [showImpulseModal, setShowImpulseModal] = useState(false);
-  const [showCalendarModal, setShowCalendarModal] = useState(false); // 🆕 Calendar Modal State
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [addingExpense, setAddingExpense] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false); 
   const [checkingImpulse, setCheckingImpulse] = useState(false);
@@ -186,28 +188,65 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // Derived values from Month Data
   const income = monthData ? parseFloat(monthData.income || 0) : 0;
   const emi = monthData ? parseFloat(monthData.emi || 0) : 0;
+  const isFirstSalaryMode = monthData?.firstSalary === true;
   
-  // Real Savings = Income - Expenses - EMI
-  const realSavings = income - totalActualExpense - emi;
+  // Budget Limits
+  const needsLimit = monthData?.budgetPlan?.needs || 0;
+  const wantsLimit = monthData?.budgetPlan?.wants || 0;
+  const savingsTarget = monthData?.budgetPlan?.savings || 0;
+  const emergencyTarget = monthData?.budgetPlan?.emergency || 0;
+
+  // 🧠 Smart Allocation Logic (Re-grouping expenses)
+  // Needs: Food, Rent, Bills, Travel
+  const needsUsed = useMemo(() => {
+    const expenses = currentMonthRecords
+      .filter(r => ["Food", "Rent", "Bills", "Travel"].includes(r.category))
+      .reduce((sum, r) => sum + (r.amount || 0), 0);
+    return expenses + emi; // EMI is a fixed need
+  }, [currentMonthRecords, emi]);
+
+  // Wants: Shopping, Entertainment, Other
+  const wantsUsed = useMemo(() => {
+    return currentMonthRecords
+      .filter(r => ["Shopping", "Entertainment", "Other"].includes(r.category))
+      .reduce((sum, r) => sum + (r.amount || 0), 0);
+  }, [currentMonthRecords]);
+
+  // Real Savings = Income - All Outflows
+  const realSavings = income - needsUsed - wantsUsed;
+  const savingsGap = savingsTarget - realSavings;
+  const availableForSpending = Math.max(0, income - emi);
+  const remainingSpendable = availableForSpending - totalActualExpense;
   
+  // 🧠 Dynamic Score Calculation (Enforcing Behavior)
   const dynamicScore = useMemo(() => {
     if (!income || income <= 0) return 0;
 
     let score = 100;
     
-    const expensePercent = (totalActualExpense / income) * 100;
-    const savingsPercent = (realSavings / income) * 100;
-    const emiPercent = (emi / income) * 100;
+    // 🥉 FIRST SALARY MODE: Score penalties are softer
+    const penaltyMultiplier = isFirstSalaryMode ? 0.5 : 1; 
 
-    if (expensePercent > 50) score -= (expensePercent - 50); 
-    if (savingsPercent < 20) {
-      if (savingsPercent < 0) score -= 40; 
-      else score -= (20 - savingsPercent); 
+    // 1. Needs adherence (Over limit penalizes score)
+    if (needsUsed > needsLimit) {
+        const excessPercent = ((needsUsed - needsLimit) / (needsLimit || 1)) * 100;
+        score -= Math.min(30, excessPercent * 0.5 * penaltyMultiplier); 
     }
-    if (emiPercent > 30) score -= 10;
+
+    // 2. Wants adherence (Strict penalty)
+    if (wantsUsed > wantsLimit) {
+        const excessPercent = ((wantsUsed - wantsLimit) / (wantsLimit || 1)) * 100;
+        score -= Math.min(40, excessPercent * 1.0 * penaltyMultiplier); 
+    }
+
+    // 3. Savings Gap (Penalty for missing target)
+    if (realSavings < savingsTarget) {
+        const gapPercent = ((savingsTarget - realSavings) / (income || 1)) * 100;
+        score -= Math.min(30, gapPercent * 1.5 * penaltyMultiplier); 
+    }
 
     return Math.max(0, Math.min(100, Math.round(score)));
-  }, [income, totalActualExpense, realSavings, emi]);
+  }, [income, needsUsed, needsLimit, wantsUsed, wantsLimit, realSavings, savingsTarget, isFirstSalaryMode]);
 
   // Update Score in DB
   useEffect(() => {
@@ -221,11 +260,46 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     const safeDefault = { text: "Set up your plan to get started.", color: "text-gray-400", bg: "bg-gray-500/10", border: "border-gray-500/20" };
     if (!monthData) return safeDefault;
     
+    // 🥉 FIRST SALARY MODE: Gentler Alerts
+    if (isFirstSalaryMode) {
+        if (realSavings < 0) return {
+            text: "This month is for learning. Try reducing food spending next month to balance out.",
+            color: "text-orange-300",
+            bg: "bg-orange-500/10",
+            border: "border-orange-500/20"
+        };
+        if (wantsUsed > wantsLimit) return {
+            text: "It's okay to enjoy your first salary, but keep an eye on subscriptions.",
+            color: "text-blue-300",
+            bg: "bg-blue-500/10",
+            border: "border-blue-500/20"
+        };
+        if (dynamicScore >= 80) return {
+            text: "Fantastic start! You're managing your first salary like a pro.",
+            color: "text-emerald-400",
+            bg: "bg-emerald-500/10",
+            border: "border-emerald-500/20"
+        };
+        return { 
+            text: "First month is special. Observe where your money goes.", 
+            color: "text-violet-200", 
+            bg: "bg-white/5",
+            border: "border-white/10"
+        };
+    }
+
+    // 🚨 NORMAL MODE: Strict Alerts
     if (realSavings < 0) return { 
-      text: "You are overspending! Your savings are negative this month.", 
+      text: "Warning: You are spending more than you earn!", 
       color: "text-red-400", 
       bg: "bg-red-500/10",
       border: "border-red-500/20"
+    };
+    if (wantsUsed > wantsLimit) return {
+      text: "You've exceeded your wants budget. Cut back on discretionary spending.",
+      color: "text-amber-400",
+      bg: "bg-amber-500/10",
+      border: "border-amber-500/20"
     };
     if (dynamicScore >= 80) return {
       text: "Great job! You are hitting your savings goals perfectly.",
@@ -239,7 +313,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       bg: "bg-white/5",
       border: "border-white/10"
     };
-  }, [realSavings, dynamicScore, monthData]);
+  }, [realSavings, wantsUsed, wantsLimit, dynamicScore, monthData, isFirstSalaryMode]);
 
   const expenseByCategory = useMemo(() => {
     const map = currentMonthRecords.reduce((acc, r) => {
@@ -284,25 +358,42 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 📆 Calendar View Logic
   // -----------------------------
   const calendarData = useMemo(() => {
-    const daysInMonth = new Date(selectedMonthKey.split("-")[0], selectedMonthKey.split("-")[1], 0).getDate();
-    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    if (!selectedMonthKey) return [];
     
-    // Map spending per day
-    const spendingMap = {};
-    currentMonthRecords.forEach(r => {
-      const day = new Date(r.createdAt.seconds * 1000).getDate();
-      if (!spendingMap[day]) {
-        spendingMap[day] = { amount: 0, items: [] };
-      }
-      spendingMap[day].amount += r.amount;
-      spendingMap[day].items.push(`${r.description} (₹${r.amount})`);
-    });
-
-    return days.map(day => ({
-      day,
-      amount: spendingMap[day]?.amount || 0,
-      items: spendingMap[day]?.items || []
-    }));
+    try {
+        const parts = selectedMonthKey.split("-");
+        if (parts.length !== 2) return [];
+        
+        const year = parseInt(parts[0]);
+        const month = parseInt(parts[1]);
+        
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+        
+        // Map spending per day
+        const spendingMap = {};
+        currentMonthRecords.forEach(r => {
+          if (!r.createdAt) return;
+          // Safe date parsing
+          const seconds = r.createdAt.seconds || 0;
+          const day = new Date(seconds * 1000).getDate();
+          
+          if (!spendingMap[day]) {
+            spendingMap[day] = { amount: 0, items: [] };
+          }
+          spendingMap[day].amount += r.amount;
+          spendingMap[day].items.push(`${r.description} (₹${r.amount})`);
+        });
+    
+        return days.map(day => ({
+          day,
+          amount: spendingMap[day]?.amount || 0,
+          items: spendingMap[day]?.items || []
+        }));
+    } catch (e) {
+        console.error("Calendar Data Error", e);
+        return [];
+    }
   }, [currentMonthRecords, selectedMonthKey]);
 
   const getDayColor = (amount) => {
@@ -313,7 +404,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   };
 
   // -----------------------------
-  // 🧠 1️⃣ AI Impulse Tracker Logic (Dynamic)
+  // 🧠 1️⃣ AI Impulse Tracker (Final Spec)
   // -----------------------------
   const handleCheckImpulse = async () => {
     if (!impulseItem.name || !impulseItem.price) return;
@@ -326,37 +417,26 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     try {
       const price = parseFloat(impulseItem.price);
       
-      // Calculate dynamic metrics
-      const dailyIncome = income / 30; // Approx daily income
-      const hourlyIncome = dailyIncome / 8; // Approx hourly (8h work day)
-      const timeCostHours = price / hourlyIncome;
-      const timeCostDays = price / dailyIncome;
-      
-      // Impact on savings
-      const monthlySavings = monthData.budgetPlan?.savings || 1;
-      const percentOfSavings = Math.round((price / monthlySavings) * 100);
-
       const prompt = `
-        User earns ₹${income}/month. 
-        Monthly savings goal: ₹${monthlySavings}.
-        User wants to buy "${impulseItem.name}" for ₹${price}.
+        You are a strict financial lie detector.
+        User context:
+        - Monthly Income: ₹${income}
+        - Savings Target: ₹${savingsTarget}
+        - Emergency Fund Goal: ₹${emergencyTarget}
+        - Current Real Savings: ₹${realSavings}
+        - Money Health Score: ${dynamicScore}
         
-        Calculated Context:
-        - Cost in work hours: ${timeCostHours.toFixed(1)} hours
-        - Cost in work days: ${timeCostDays.toFixed(1)} days
-        - % of Monthly Savings: ${percentOfSavings}%
-
-        Task:
-        Analyze this purchase. 
-        1. Give a "Time Cost" statement (e.g., "This costs you 3 days of work").
-        2. Give a "Goal Impact" statement (e.g., "Delays your savings goal by 1 week").
-        3. Give a final "Verdict" (Buy / Wait / Don't Buy).
+        The user wants to buy "${impulseItem.name}" for ₹${price}.
         
-        Return JSON format:
+        Calculate the impact and return ONLY JSON:
         {
-          "timeCost": "...",
-          "goalImpact": "...",
-          "verdict": "..."
+          "savingsBefore": ${realSavings},
+          "savingsAfter": ${realSavings - price},
+          "scoreBefore": ${dynamicScore},
+          "scoreAfter": ${Math.max(0, dynamicScore - Math.round((price/income)*20))}, 
+          "emergencyDelayDays": ${Math.round(price / (income/30 || 1))},
+          "tradeoffs": ["Tradeoff 1 (e.g. 2 weeks of groceries)", "Tradeoff 2"],
+          "message": "A neutral, factual statement about the impact."
         }
       `;
 
@@ -376,9 +456,21 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
          const result = JSON.parse(text);
          setImpulseResult(result);
          
-         // Save summary to Firestore history
+         const historyItem = {
+            ...result, 
+            item: impulseItem.name,
+            price: price,
+            delayDays: result.emergencyDelayDays,
+            scoreDrop: result.scoreBefore - result.scoreAfter,
+            date: new Date().toISOString()
+         };
+
          const monthRef = doc(db, 'users', user.uid, 'months', selectedMonthKey);
-         await updateDoc(monthRef, { lastImpulseCheck: `${impulseItem.name}: ${result.verdict}` });
+         
+         await setDoc(monthRef, { 
+            impulseHistory: arrayUnion(historyItem),
+            lastImpulseCheck: `${impulseItem.name}: ${result.message}`
+         }, { merge: true });
       }
 
     } catch (error) {
@@ -487,12 +579,19 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       // 📊 Income-Based Smart Allocation
       let needsPct, wantsPct, savingsPct, emergencyPct;
 
-      if (numIncome < 30000) {
-        needsPct = 0.60; wantsPct = 0.15; savingsPct = 0.15; emergencyPct = 0.10;
-      } else if (numIncome <= 70000) {
-        needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.20; emergencyPct = 0.10;
+      if (setupFormData.isFirstSalary) {
+        // 🥉 FIRST SALARY MODE: Gentle Allocations
+        // Focus: Needs buffer (50%), Enjoyment (20%), Moderate Savings (10%), High Emergency Build (20%)
+        needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.10; emergencyPct = 0.20;
       } else {
-        needsPct = 0.40; wantsPct = 0.20; savingsPct = 0.30; emergencyPct = 0.10;
+        // 🤖 Standard Logic
+        if (numIncome < 30000) {
+          needsPct = 0.60; wantsPct = 0.15; savingsPct = 0.15; emergencyPct = 0.10;
+        } else if (numIncome <= 70000) {
+          needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.20; emergencyPct = 0.10;
+        } else {
+          needsPct = 0.40; wantsPct = 0.20; savingsPct = 0.30; emergencyPct = 0.10;
+        }
       }
 
       const budgetPlan = {
@@ -509,7 +608,9 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         firstSalary: setupFormData.isFirstSalary,
         score: 100, 
         budgetPlan,
-        adviceText: "Plan created. Stick to your limits.",
+        adviceText: setupFormData.isFirstSalary 
+          ? "Welcome to your first salary! Let's start with easy habits."
+          : "Plan created. Stick to your limits.",
         spenderType: "Balanced",
         updatedAt: new Date().toISOString()
       };
@@ -553,46 +654,46 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     );
   };
 
-  const PlanBar = ({ label, amount, total, colorClass, isSavings }) => {
-    if (!amount) return null;
-    const displayAmount = isSavings ? realSavings : amount;
-    const percent = total ? Math.min(100, Math.max(0, Math.round((displayAmount / total) * 100))) : 0;
+  // 🌟 Smart Allocation Bar (Reactive)
+  const AllocBar = ({ label, used, limit, type = "expense", note }) => {
+    const safeLimit = limit || 1;
+    const percent = Math.min(100, Math.max(0, (used / safeLimit) * 100));
     
-    let finalColor = colorClass;
-    let statusText = "";
-
-    if (isSavings) {
-       if (displayAmount < 0) {
-         finalColor = "bg-red-500 shadow-[0_0_10px_-2px_rgba(239,68,68,0.5)]";
-         statusText = "(Negative!)";
-       }
-       else if (displayAmount < amount) {
-         finalColor = "bg-amber-500 shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]";
-         statusText = "(Below Target)";
-       }
+    let color = "bg-emerald-500";
+    let glow = "";
+    
+    if (type === 'savings') {
+        // Savings Logic: Green if >= target, Red if negative/low
+        if (used < 0) { color = "bg-red-600"; glow = "shadow-[0_0_10px_-2px_rgba(220,38,38,0.5)]"; }
+        else if (used < limit) { color = "bg-amber-500"; glow = "shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]"; }
+        else { color = "bg-emerald-500"; glow = "shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]"; }
+    } else {
+        // Expenses Logic: Green if < 80%, Yellow if > 80%, Red if > 100%
+        if (used > limit) { color = "bg-red-500"; glow = "shadow-[0_0_10px_-2px_rgba(239,68,68,0.5)]"; }
+        else if (used > limit * 0.8) { color = "bg-yellow-500"; glow = "shadow-[0_0_10px_-2px_rgba(234,179,8,0.5)]"; }
+        else { color = "bg-emerald-500"; }
     }
 
     return (
       <div className="mb-4">
         <div className="flex justify-between text-xs mb-1.5">
-          <span className="text-gray-400 font-medium">{label} <span className="text-red-400 text-[10px]">{statusText}</span></span>
-          <span className={`font-semibold ${isSavings && displayAmount < amount ? "text-amber-400" : "text-white"}`}>
-            ₹{displayAmount.toLocaleString()} 
-            {isSavings && displayAmount !== amount && (
-               <span className="text-[10px] text-gray-500 ml-1">
-                 / ₹{amount.toLocaleString()}
-               </span>
-            )}
+          <span className="text-gray-400 font-medium flex items-center gap-1">
+            {label} 
+            {note && <span className="text-[10px] text-gray-500 hidden sm:inline">({note})</span>}
+          </span>
+          <span className={`font-semibold text-white`}>
+            ₹{used.toLocaleString()} 
+            {limit > 0 && <span className="text-[10px] text-gray-500 ml-1"> / ₹{limit.toLocaleString()}</span>}
           </span>
         </div>
-        <div className="w-full bg-white/5 rounded-full h-2.5 overflow-hidden">
+        <div className="w-full bg-white/5 rounded-full h-2.5 overflow-hidden border border-white/5">
           <div 
-            className={`h-full rounded-full ${finalColor} transition-all duration-1000 ease-out origin-left scale-x-0 animate-[shimmer_2s_infinite]`} 
-            style={{ 
-              width: `${percent}%`,
-              animation: 'growWidth 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards' 
-            }}
-          ></div>
+            className={`h-full rounded-full ${color} ${glow} transition-all duration-1000 ease-out relative`} 
+            style={{ width: `${percent}%` }}
+          >
+            {/* Shimmer effect for active/high usage */}
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent w-full -translate-x-full animate-[shimmer_2s_infinite]"></div>
+          </div>
         </div>
       </div>
     );
@@ -639,26 +740,24 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
             </h1>
             <p className="text-xs text-gray-400 mt-0.5">
               Financial health for <span className="text-violet-400 font-medium">{monthName}</span>
+              {isFirstSalaryMode && (
+                <span className="ml-2 inline-flex items-center gap-1 bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full text-[10px] border border-violet-500/20">
+                  <GraduationCap className="w-3 h-3" /> First Salary Mode
+                </span>
+              )}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-             {/* 🧠 1️⃣ Check Impulse Button */}
+             {/* Impulse Button Removed */}
              {monthData && (
                <>
-                 {/* 🆕 Calendar View Button */}
+                 {/* Calendar View Button */}
                  <button 
                    onClick={() => setShowCalendarModal(true)}
                    className="hidden sm:flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full text-blue-400 text-sm font-medium hover:bg-blue-500/20 transition-all active:scale-95"
                  >
                    <Calendar className="w-4 h-4" /> Calendar
-                 </button>
-
-                 <button 
-                   onClick={() => setShowImpulseModal(true)}
-                   className="hidden sm:flex items-center gap-2 px-4 py-2 bg-pink-500/10 border border-pink-500/20 rounded-full text-pink-400 text-sm font-medium hover:bg-pink-500/20 transition-all active:scale-95"
-                 >
-                   <ShoppingCart className="w-4 h-4" /> Check Purchase
                  </button>
                </>
              )}
@@ -686,7 +785,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6 relative z-10">
         
-        {!loadingMonthData && !monthData ? (
+        {loadingMonthData ? (
+           <div className="flex justify-center py-20">
+             <Loader2 className="w-10 h-10 animate-spin text-violet-500" />
+           </div>
+        ) : !monthData ? (
           <div className="col-span-full flex flex-col items-center justify-center py-16 border-2 border-dashed border-violet-500/30 rounded-3xl bg-violet-500/5 animate-in fade-in zoom-in duration-300">
             <div className="w-16 h-16 rounded-full bg-violet-500/10 flex items-center justify-center mb-4 ring-4 ring-violet-500/5">
               <Sparkles className="w-8 h-8 text-violet-400" />
@@ -743,7 +846,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                                         "{monthData.aiAdviceText || aiInsight.text}"
                                     </p>
                                     
-                                    {/* 🎯 Impulse Impact on Dashboard */}
+                                    {/* 🎯 Impulse Impact on Dashboard - Updated to be dynamic */}
                                     {monthData.lastImpulseCheck && (
                                        <div className="mt-2 pt-2 border-t border-white/5 text-[10px] text-pink-300">
                                           🛍️ Last Impulse Check: {monthData.lastImpulseCheck}
@@ -776,29 +879,190 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                   {/* 2. Smart Allocation (Updated Logic) */}
                   <div className="lg:col-span-8 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 relative group hover:border-blue-500/20 transition-all duration-500 shadow-xl">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 group-hover:bg-blue-500/10 transition-colors" />
-                    <div className="flex items-center gap-3 mb-8">
-                      <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]"><Wallet className="w-6 h-6 text-blue-400" /></div>
-                      <div><h2 className="font-bold text-xl text-white">Smart Allocation</h2><p className="text-sm text-gray-400">EMI & Savings are deducted first</p></div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]"><Wallet className="w-6 h-6 text-blue-400" /></div>
+                        <div><h2 className="font-bold text-xl text-white">Smart Allocation</h2><p className="text-sm text-gray-400">Budget vs Reality</p></div>
+                      </div>
+                      <div className="bg-blue-500/10 px-4 py-2 rounded-xl border border-blue-500/20 text-right">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider">Available to Spend</p>
+                        <p className="text-xl font-bold text-blue-300">₹{availableForSpending.toLocaleString()}</p>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
-                      <PlanBar label="Fixed EMI" amount={emi} total={income} colorClass="bg-gradient-to-r from-gray-600 to-gray-500 shadow-[0_0_10px_-2px_rgba(107,114,128,0.5)]" />
-                      <PlanBar label="Real Savings" amount={monthData.budgetPlan?.savings} total={income} isSavings={true} colorClass="bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_-2px_rgba(16,185,129,0.5)]" />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+                      {/* Needs Row (Includes EMI) */}
+                      <div className="md:col-span-2">
+                         <AllocBar 
+                           label="Needs (Fixed + Food + Travel)" 
+                           used={needsUsed} 
+                           limit={needsLimit} 
+                           type="needs"
+                           note="Must be < 50%"
+                         />
+                      </div>
+
+                      {/* Wants Row */}
+                      <div className="md:col-span-2">
+                         <AllocBar 
+                           label="Wants (Shopping + Fun)" 
+                           used={wantsUsed} 
+                           limit={wantsLimit} 
+                           type="wants"
+                           note="Keep under 30%"
+                         />
+                      </div>
+
+                      {/* Savings Row with Gap Message */}
+                      <div className="md:col-span-2">
+                        <AllocBar 
+                          label="Real Savings" 
+                          used={realSavings} 
+                          limit={savingsTarget} 
+                          type="savings" 
+                          note="Target 20%"
+                        />
+                        
+                        {/* 🌟 Powerful Gap Message */}
+                        <div className={`mt-[-10px] mb-4 p-3 rounded-xl border flex items-center gap-3 ${savingsGap > 0 ? "bg-red-500/10 border-red-500/20 text-red-300" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"}`}>
+                           {savingsGap > 0 ? <AlertTriangle className="w-5 h-5 shrink-0" /> : <CheckCircle className="w-5 h-5 shrink-0" />}
+                           <span className="font-semibold text-sm">
+                             {savingsGap > 0 
+                               ? `You are ₹${savingsGap.toLocaleString()} behind your saving target.`
+                               : `You are ₹${Math.abs(savingsGap).toLocaleString()} ahead of your saving target!`}
+                           </span>
+                        </div>
+                      </div>
                       
-                      <PlanBar label="Needs Budget" amount={monthData.budgetPlan?.needs} total={income} colorClass="bg-gradient-to-r from-blue-600 to-blue-400 shadow-[0_0_10px_-2px_rgba(59,130,246,0.5)]" />
-                      <PlanBar label="Wants Budget" amount={monthData.budgetPlan?.wants} total={income} colorClass="bg-gradient-to-r from-pink-600 to-pink-400 shadow-[0_0_10px_-2px_rgba(236,72,153,0.5)]" />
-                      <PlanBar label="Emergency Fund" amount={monthData.budgetPlan?.emergency} total={income} colorClass="bg-gradient-to-r from-yellow-500 to-amber-500 shadow-[0_0_10px_-2px_rgba(245,158,11,0.5)]" />
+                      {/* Emergency Fund (Optional tracking, keeping separate bar for visualization) */}
+                      <AllocBar 
+                        label="Emergency Fund Goal" 
+                        used={realSavings > savingsTarget ? realSavings - savingsTarget : 0} 
+                        limit={emergencyTarget} 
+                        type="savings" 
+                        note="Extra cushion"
+                      />
                     </div>
                   </div>
 
-                  {/* 3. Reality Check */}
+                  {/* 🆕 3. Impulse Purchase Checker (New Card) */}
+                  <div className="lg:col-span-12 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-all duration-500 shadow-xl">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-2.5 bg-pink-500/10 rounded-xl border border-pink-500/20 shadow-sm"><ShoppingCart className="w-5 h-5 text-pink-400" /></div>
+                      <div><h2 className="font-bold text-lg text-white">Impulse Purchase Checker</h2><p className="text-xs text-gray-400">Financial Lie Detector</p></div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-8">
+                      {/* Input Section */}
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-xs text-gray-400 uppercase tracking-wider ml-1">Item Name</label>
+                          <input type="text" placeholder="e.g. New Headphones" value={impulseItem.name} onChange={(e) => setImpulseItem({...impulseItem, name: e.target.value})} className="w-full mt-1 p-4 bg-black/30 border border-white/10 rounded-2xl text-white focus:border-pink-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 uppercase tracking-wider ml-1">Price</label>
+                          <input type="number" placeholder="2000" value={impulseItem.price} onChange={(e) => setImpulseItem({...impulseItem, price: e.target.value})} className="w-full mt-1 p-4 bg-black/30 border border-white/10 rounded-2xl text-white focus:border-pink-500 outline-none" />
+                        </div>
+                        <button onClick={handleCheckImpulse} disabled={checkingImpulse} className="w-full py-4 bg-pink-600 text-white rounded-2xl font-bold hover:bg-pink-700 transition-colors mt-2 disabled:opacity-50">
+                          {checkingImpulse ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Check Impact"}
+                        </button>
+                      </div>
+
+                      {/* Result & History Section */}
+                      <div className="flex flex-col h-full space-y-4 min-w-0">
+                        {impulseResult ? (
+                          <div className="bg-black/30 border border-white/10 rounded-2xl p-6 animate-in fade-in slide-in-from-right duration-300">
+                            {/* A. Savings Drop Bar */}
+                            <div className="mb-4">
+                              <div className="flex justify-between text-xs text-gray-400 mb-1"><span>Savings Impact</span><span>-₹{impulseItem.price}</span></div>
+                              <div className="h-3 w-full bg-white/10 rounded-full overflow-hidden flex">
+                                <div style={{width: `${(impulseResult.savingsAfter / Math.max(impulseResult.savingsBefore, 1)) * 100}%`}} className="h-full bg-emerald-500 transition-all duration-1000"></div>
+                                <div className="h-full bg-red-500/50 flex-1"></div>
+                              </div>
+                              <div className="flex justify-between text-[10px] mt-1 text-gray-500">
+                                <span>Before: ₹{impulseResult.savingsBefore.toLocaleString()}</span>
+                                <span>After: ₹{impulseResult.savingsAfter.toLocaleString()}</span>
+                              </div>
+                            </div>
+
+                            {/* B & C Metrics */}
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                              <div className="bg-white/5 p-3 rounded-xl border border-white/5 text-center">
+                                <div className="text-xs text-gray-400 mb-1">Score Drop</div>
+                                <div className="text-xl font-bold text-red-400 flex items-center justify-center gap-1">
+                                  {impulseResult.scoreBefore} <ArrowDown className="w-4 h-4"/> {impulseResult.scoreAfter}
+                                </div>
+                              </div>
+                              <div className="bg-white/5 p-3 rounded-xl border border-white/5 text-center">
+                                <div className="text-xs text-gray-400 mb-1">Emergency Delay</div>
+                                <div className="text-xl font-bold text-amber-400">+{impulseResult.emergencyDelayDays} days</div>
+                              </div>
+                            </div>
+
+                            {/* D. Trade-offs */}
+                            <div className="space-y-2">
+                              {impulseResult.tradeoffs?.map((t, i) => (
+                                <div key={i} className="flex items-center gap-2 text-xs text-gray-300 bg-white/5 p-2 rounded-lg border border-white/5">
+                                  <Target className="w-3 h-3 text-violet-400" /> {t}
+                                </div>
+                              ))}
+                            </div>
+                            
+                            <p className="mt-4 text-xs text-center text-gray-400 italic border-t border-white/5 pt-3">"{impulseResult.message}"</p>
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 border-2 border-dashed border-white/5 rounded-2xl min-h-[150px]">
+                            <ShoppingCart className="w-8 h-8 opacity-20 mb-2" />
+                            <p className="text-sm">Enter item details to see impact</p>
+                          </div>
+                        )}
+
+                        {/* History */}
+                        {monthData?.impulseHistory?.length > 0 && (
+                          <div className="pt-2 mt-auto">
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2 ml-1">Recent Checks (Click to view)</p>
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                              {(monthData.impulseHistory || []).slice(-3).reverse().map((h, i) => (
+                                <div 
+                                  key={i} 
+                                  onClick={() => {
+                                    setImpulseItem({ name: h.item, price: h.price });
+                                    setImpulseResult(h);
+                                  }}
+                                  className="min-w-[120px] bg-white/5 p-2 rounded-xl border border-white/5 text-[10px] cursor-pointer hover:bg-white/10 transition-colors"
+                                >
+                                  <div className="font-bold text-white truncate">{h.item}</div>
+                                  <div className="text-gray-400">₹{h.price}</div>
+                                  <div className="text-red-400">Score: -{h.scoreDrop}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. Reality Check */}
                   <div className="lg:col-span-5 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col hover:border-pink-500/20 transition-all duration-500 shadow-xl">
                     <div className="flex items-center gap-3 mb-2">
                       <div className={`p-2.5 bg-pink-500/10 rounded-xl border border-pink-500/20 shadow-sm ${addingExpense ? 'animate-pulse ring-2 ring-pink-500/30' : ''}`}><Activity className="w-5 h-5 text-pink-400" /></div>
-                      <div><h2 className="font-bold text-lg text-white">Spending Reality</h2><p className="text-xs text-gray-400">Total Expenses (Excl. EMI)</p></div>
+                      <div><h2 className="font-bold text-lg text-white">Spending Reality</h2></div>
                     </div>
-                    <div className="my-6">
-                      <span className={`text-4xl font-bold text-white tracking-tight inline-block transition-transform duration-300 ${addingExpense ? 'scale-110 text-pink-300' : ''}`}>₹{totalActualExpense.toLocaleString()}</span>
-                      <span className="text-sm text-gray-500 ml-2">total spent</span>
+                    
+                    <div className="my-4 p-4 bg-white/5 rounded-2xl border border-white/5">
+                      <div className="flex justify-between items-end mb-1">
+                         <span className="text-xs text-gray-400 uppercase">Remaining to Spend</span>
+                         <span className={`text-xl font-bold ${remainingSpendable < 0 ? 'text-red-400' : 'text-emerald-400'}`}>₹{remainingSpendable.toLocaleString()}</span>
+                      </div>
+                      <div className="w-full bg-black/40 h-1.5 rounded-full overflow-hidden">
+                         <div className={`h-full rounded-full ${remainingSpendable < 0 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, Math.max(0, (remainingSpendable / availableForSpending) * 100))}%` }}></div>
+                      </div>
+                    </div>
+
+                    <div className="my-2">
+                      <span className={`text-3xl font-bold text-white tracking-tight inline-block transition-transform duration-300 ${addingExpense ? 'scale-110 text-pink-300' : ''}`}>₹{totalActualExpense.toLocaleString()}</span>
+                      <span className="text-xs text-gray-500 ml-2">used so far</span>
                     </div>
                     <div className={`h-[250px] w-full mt-auto transition-all duration-700 ${addingExpense ? 'rotate-3 scale-105' : ''}`}>
                       {expenseByCategory.length > 0 ? (
@@ -820,7 +1084,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                     </div>
                   </div>
 
-                  {/* 4. The Trend */}
+                  {/* 5. The Trend */}
                   <div className="lg:col-span-7 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 flex flex-col hover:border-amber-500/20 transition-all duration-500 shadow-xl">
                     <div className="flex items-center gap-3 mb-6">
                       <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 shadow-sm"><TrendingUp className="w-5 h-5 text-amber-400" /></div>
@@ -934,6 +1198,21 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                     <input type="number" min="0" placeholder="0" value={setupFormData.emi} onChange={(e) => setSetupFormData({...setupFormData, emi: e.target.value})} className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all" />
                   </div>
                </div>
+
+               {/* 🆕 First Salary Toggle */}
+               <div 
+                 onClick={() => setSetupFormData({ ...setupFormData, isFirstSalary: !setupFormData.isFirstSalary })}
+                 className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${setupFormData.isFirstSalary ? 'bg-violet-600/20 border-violet-500/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+               >
+                 <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${setupFormData.isFirstSalary ? 'bg-violet-500 border-violet-500' : 'border-gray-500'}`}>
+                   {setupFormData.isFirstSalary && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                 </div>
+                 <div>
+                   <p className={`text-sm font-semibold ${setupFormData.isFirstSalary ? 'text-violet-200' : 'text-gray-300'}`}>This is my First Salary</p>
+                   <p className="text-xs text-gray-500">Enable "Learning Mode" with softer alerts</p>
+                 </div>
+               </div>
+
                <button type="submit" disabled={setupLoading} className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-95 transition-all mt-4 disabled:opacity-50">
                   {setupLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : "Generate AI Plan 🚀"}
                 </button>
@@ -942,51 +1221,13 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         </div>
       )}
 
-      {/* 🆕 Impulse Check Modal - More Dynamic */}
+      {/* 🆕 Impulse Check Modal (Replaced by on-dashboard card, removing this modal) */}
       {showImpulseModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
-            <button onClick={() => {setShowImpulseModal(false); setImpulseResult(null); setImpulseItem({name:"", price:""})}} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
-            <h2 className="text-2xl font-bold text-white mb-2">Check Before Buying 🛍️</h2>
-            <p className="text-gray-400 mb-6 text-sm">See the real cost of your impulse.</p>
-
-            {!impulseResult ? (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wider ml-1">Item Name</label>
-                  <input type="text" placeholder="e.g. New Headphones" value={impulseItem.name} onChange={(e) => setImpulseItem({...impulseItem, name: e.target.value})} className="w-full mt-1 p-4 bg-black/30 border border-white/10 rounded-2xl text-white focus:border-pink-500 outline-none" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wider ml-1">Price</label>
-                  <input type="number" placeholder="2000" value={impulseItem.price} onChange={(e) => setImpulseItem({...impulseItem, price: e.target.value})} className="w-full mt-1 p-4 bg-black/30 border border-white/10 rounded-2xl text-white focus:border-pink-500 outline-none" />
-                </div>
-                <button onClick={handleCheckImpulse} disabled={checkingImpulse} className="w-full py-4 bg-pink-600 text-white rounded-2xl font-bold hover:bg-pink-700 transition-colors mt-2 disabled:opacity-50">
-                  {checkingImpulse ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Analyze Impact"}
-                </button>
-              </div>
-            ) : (
-              <div className="text-left space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                   <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                      <div className="flex items-center gap-2 mb-1 text-gray-400 text-xs uppercase tracking-wider">
-                         <Clock className="w-3 h-3 text-pink-400"/> Time Cost
-                      </div>
-                      <p className="text-white font-bold">{impulseResult.timeCost}</p>
-                   </div>
-                   <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                      <div className="flex items-center gap-2 mb-1 text-gray-400 text-xs uppercase tracking-wider">
-                         <Target className="w-3 h-3 text-amber-400"/> Goal Impact
-                      </div>
-                      <p className="text-white font-bold">{impulseResult.goalImpact}</p>
-                   </div>
-                </div>
-
-                <div className="p-4 bg-pink-500/10 border border-pink-500/20 rounded-2xl">
-                  <p className="text-pink-300 font-medium text-lg leading-relaxed text-center">"{impulseResult.verdict}"</p>
-                </div>
-                <button onClick={() => setShowImpulseModal(false)} className="w-full py-3 bg-white/10 text-white rounded-xl hover:bg-white/20">Close</button>
-              </div>
-            )}
+            {/* Logic Moved to Dashboard Card, kept here for mobile FAB support if needed, but primary UI is now the card */}
+             <button onClick={() => setShowImpulseModal(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
+             <div className="text-center text-gray-400">Please use the Impulse Checker card on the dashboard.</div>
           </div>
         </div>
       )}
