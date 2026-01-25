@@ -1,4 +1,5 @@
-import AIRoadmap from "./AIRoadmap";
+import AIRoadmap from "./AIRoadmap.jsx";
+import InvestmentPlans from "./InvestmentPlans.jsx"; 
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -44,7 +45,7 @@ import {
   ShoppingCart,
   Clock,
   Target,
-  GraduationCap // Added icon for First Salary mode
+  GraduationCap
 } from "lucide-react";
 
 import {
@@ -86,9 +87,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const [generatingAI, setGeneratingAI] = useState(false); 
   const [checkingImpulse, setCheckingImpulse] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
-
-  
-
+  const [showInvestmentPlans, setShowInvestmentPlans] = useState(false); // ✅ Investment Modal State
 
   // Impulse State
   const [impulseItem, setImpulseItem] = useState({ name: "", price: "" });
@@ -765,13 +764,21 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                    <Calendar className="w-4 h-4" /> Calendar
                  </button>
 
-                 {/* 🧠 AI Roadmap Button (NEW) */}
-    <button 
-  onClick={() => setShowRoadmap(true)}
-  className="hidden sm:flex items-center gap-2 px-4 py-2 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 text-sm font-medium hover:bg-violet-500/20 transition-all active:scale-95"
->
-  <Sparkles className="w-4 h-4" /> AI Roadmap
-</button>
+                 {/* ✅ Investment Plans Button */}
+                 <button 
+                   onClick={() => setShowInvestmentPlans(true)}
+                   className="hidden sm:flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 text-sm font-medium hover:bg-emerald-500/20 transition-all active:scale-95"
+                 >
+                   <TrendingUp className="w-4 h-4" /> Investments
+                 </button>
+
+                 {/* 🧠 AI Roadmap Button */}
+                 <button 
+                   onClick={() => setShowRoadmap(true)}
+                   className="hidden sm:flex items-center gap-2 px-4 py-2 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 text-sm font-medium hover:bg-violet-500/20 transition-all active:scale-95"
+                 >
+                   <Sparkles className="w-4 h-4" /> AI Roadmap
+                 </button>
                </>
              )}
 
@@ -1325,10 +1332,14 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         records={records}
         selectedMonthKey={selectedMonthKey}
       />
+
+       {/* 📈 Investment Plans Modal */}
+      <InvestmentPlans
+        open={showInvestmentPlans}
+        onClose={() => setShowInvestmentPlans(false)}
+        income={income}
+      />
     </div>
   );
 };
-
-
-
 export default Dashboard;
