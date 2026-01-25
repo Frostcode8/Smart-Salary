@@ -7,7 +7,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "./firebase.js";
 
-const GEMINI_API_KEY = "AIzaSyB8LuU9OMZpuiHLDVffQjOFQtAGyO6Utbo";
+const GEMINI_API_KEY = "AIzaSyCPUiIvOnMs8Y-zeX8SiTeF4YjktDag7ZI";
 
 // 🎨 Circular Progress Component
 const ProgressRing = ({ radius, stroke, progress, color }) => {
@@ -120,7 +120,7 @@ export default function AIRoadmap({
   const savingsGap = savingsTarget - realSavings;
   const impulseCount = safeMonthData.impulseHistory?.length || 0;
 
-  // ⏱️ Time Left
+  // ⏱️ Time Left Calculation (Fixed)
   const daysInMonth = useMemo(() => {
     const [year, month] = selectedMonthKey.split("-").map(Number);
     return new Date(year, month, 0).getDate();
@@ -128,9 +128,18 @@ export default function AIRoadmap({
 
   const todayDate = new Date().getDate();
   
-  // Logic: If past month, days left is 0. If current month, calc remaining.
-  const isCurrentMonth = selectedMonthKey === new Date().toISOString().slice(0,7);
-  const daysLeft = isCurrentMonth ? Math.max(0, daysInMonth - todayDate) : 0;
+  // ✅ NEW LOGIC: Detect Past, Present, Future
+  const currentMonthKey = new Date().toISOString().slice(0,7);
+  const isCurrentMonth = selectedMonthKey === currentMonthKey;
+  const isPastMonth = selectedMonthKey < currentMonthKey;
+  const isFutureMonth = selectedMonthKey > currentMonthKey;
+
+  const daysLeft = isCurrentMonth
+    ? Math.max(0, daysInMonth - todayDate)
+    : isFutureMonth
+      ? daysInMonth // Future: Full month available
+      : 0;          // Past: Month ended
+
   const monthProgress = Math.min(100, (todayDate / daysInMonth) * 100);
 
   // -----------------------------
@@ -406,16 +415,20 @@ export default function AIRoadmap({
           </div>
         </div>
 
-        {/* ⏱️ 5. Time Left Bar */}
+        {/* ⏱️ 5. Time Left Bar (Updated Logic) */}
         <div className="px-6 py-2 bg-black/40 border-b border-white/5 flex items-center gap-4">
             <span className="text-xs text-gray-400 flex items-center gap-1 min-w-fit">
                 <Clock className="w-3 h-3" /> 
-                {daysLeft > 0 ? `${daysLeft} days left` : "Month Ended"}
+                {daysLeft > 0 
+                  ? `${daysLeft} days ${isFutureMonth ? 'available' : 'left'}` 
+                  : isPastMonth 
+                    ? "Month Ended" 
+                    : "Last Day"}
             </span>
             <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
                 <div 
-                    className={`h-full rounded-full transition-all duration-1000 ${daysLeft < 5 ? "bg-red-500" : "bg-violet-500"}`} 
-                    style={{ width: `${isCurrentMonth ? (100 - monthProgress) : 0}%` }} // shrinking bar
+                    className={`h-full rounded-full transition-all duration-1000 ${daysLeft < 5 && !isFutureMonth ? "bg-red-500" : "bg-violet-500"}`} 
+                    style={{ width: `${isFutureMonth ? 100 : isCurrentMonth ? (100 - monthProgress) : 0}%` }} 
                 />
             </div>
         </div>

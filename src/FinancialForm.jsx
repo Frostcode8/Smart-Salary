@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from './firebase.js'; 
-import { doc, writeBatch } from 'firebase/firestore';
-import { IndianRupee, LogOut, Sparkles, Calendar } from 'lucide-react';
+import { doc, writeBatch, getDoc } from 'firebase/firestore';
+import { IndianRupee, LogOut, Sparkles, Calendar, History, ArrowDown, Layers, Bug } from 'lucide-react';
 
 export default function FinancialForm() {
   const [formData, setFormData] = useState({
@@ -12,13 +12,44 @@ export default function FinancialForm() {
   const [loading, setLoading] = useState(false);
   const [userName, setUserName] = useState('User');
 
+  // 🔄 New State for Previous Month Data
+  const [prevMonthData, setPrevMonthData] = useState(null);
+  const [checkingHistory, setCheckingHistory] = useState(true);
+
   const currentMonthName = new Date().toLocaleString('default', { month: 'long' });
   const currentMonthKey = new Date().toISOString().slice(0, 7);
+
+  // Calculate Previous Month Key
+  const prevDate = new Date();
+  prevDate.setMonth(prevDate.getMonth() - 1);
+  const prevMonthKey = prevDate.toISOString().slice(0, 7);
+  const prevMonthName = prevDate.toLocaleString('default', { month: 'long' });
 
   useEffect(() => {
     if (auth.currentUser?.displayName) {
       setUserName(auth.currentUser.displayName.split(' ')[0]); 
     }
+
+    // 🕵️ Fetch Previous Month Data
+    const fetchPrevMonth = async () => {
+      if (!auth.currentUser) {
+        setCheckingHistory(false);
+        return;
+      }
+      try {
+        const docRef = doc(db, 'users', auth.currentUser.uid, 'months', prevMonthKey);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          setPrevMonthData(snap.data());
+        }
+      } catch (error) {
+        console.error("Error fetching prev month:", error);
+      } finally {
+        setCheckingHistory(false);
+      }
+    };
+    
+    fetchPrevMonth();
   }, []);
 
   const toNum = (v) => parseFloat(v || 0);
@@ -98,6 +129,34 @@ export default function FinancialForm() {
     }
   };
 
+  // ⚡ Quick Fill Handlers
+  const fillIncome = () => {
+    if (prevMonthData?.income) setFormData(prev => ({ ...prev, income: prevMonthData.income }));
+  };
+
+  const fillEmi = () => {
+    if (prevMonthData?.emi) setFormData(prev => ({ ...prev, emi: prevMonthData.emi }));
+  };
+
+  const fillBoth = () => {
+    if (prevMonthData) {
+        setFormData({
+            income: prevMonthData.income || '',
+            emi: prevMonthData.emi || ''
+        });
+    }
+  };
+
+  // 🧪 DEBUG: Simulate Returning User
+  const toggleSimulation = () => {
+    if (prevMonthData) {
+      setPrevMonthData(null); // Switch to New User Mode
+      setFormData({ income: '', emi: '' });
+    } else {
+      setPrevMonthData({ income: '75000', emi: '12000' }); // Switch to Returning User Mode
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center p-4 font-sans relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none">
@@ -130,22 +189,29 @@ export default function FinancialForm() {
         
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          <div className="bg-black/20 border border-white/10 rounded-xl p-4 flex items-center justify-between group hover:border-violet-500/30 transition-colors">
-            <div>
-              <p className="font-semibold text-white">This is my first salary</p>
-              <p className="text-xs text-gray-400 mt-1">
-                {isFirstSalary 
-                  ? "We'll be extra gentle with the plan" 
-                  : "Turn this on if you just started earning"}
-              </p>
-            </div>
-            <input
-              type="checkbox"
-              checked={isFirstSalary}
-              onChange={() => setIsFirstSalary(!isFirstSalary)}
-              className="w-6 h-6 accent-violet-500 cursor-pointer rounded bg-white/10 border-white/20"
-            />
-          </div>
+          {/* ✅ CONDITIONALLY RENDER FIRST SALARY CHECKBOX 
+              Logic: If we have previous month data, HIDE this checkbox.
+          */}
+          {checkingHistory ? (
+             <div className="h-20 w-full bg-white/5 animate-pulse rounded-xl" />
+          ) : !prevMonthData ? (
+             <div className="bg-black/20 border border-white/10 rounded-xl p-4 flex items-center justify-between group hover:border-violet-500/30 transition-colors animate-in fade-in slide-in-from-left duration-300">
+                <div>
+                  <p className="font-semibold text-white">This is my first salary</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {isFirstSalary 
+                      ? "We'll be extra gentle with the plan" 
+                      : "Turn this on if you just started earning"}
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isFirstSalary}
+                  onChange={() => setIsFirstSalary(!isFirstSalary)}
+                  className="w-6 h-6 accent-violet-500 cursor-pointer rounded bg-white/10 border-white/20"
+                />
+             </div>
+          ) : null}
 
           <div className="space-y-4">
             <div className="group">
@@ -180,14 +246,73 @@ export default function FinancialForm() {
             </div>
           </div>
 
+          {/* ⚡ NEW: Previous Month Buttons (Expanded) 
+              Logic: ONLY shows if we have data from the previous month.
+          */}
+          {!checkingHistory && prevMonthData && (
+            <div className="bg-white/5 border border-white/5 rounded-xl p-3 animate-in fade-in slide-in-from-right duration-300">
+              <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
+                <History className="w-3 h-3 text-violet-400" />
+                <span className="uppercase tracking-wider font-semibold">Quick Fill from Last Month</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                    {prevMonthData.income && (
+                    <button 
+                        type="button"
+                        onClick={fillIncome}
+                        className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
+                    >
+                        <span>Income: ₹{prevMonthData.income}</span>
+                        <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
+                    </button>
+                    )}
+                    {prevMonthData.emi && parseFloat(prevMonthData.emi) > 0 && (
+                    <button 
+                        type="button"
+                        onClick={fillEmi}
+                        className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
+                    >
+                        <span>EMI: ₹{prevMonthData.emi}</span>
+                        <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
+                    </button>
+                    )}
+                </div>
+                
+                {/* Fill Both Button */}
+                {prevMonthData.income && prevMonthData.emi && parseFloat(prevMonthData.emi) > 0 && (
+                    <button 
+                        type="button"
+                        onClick={fillBoth}
+                        className="w-full py-2 px-3 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 rounded-lg text-xs text-violet-300 hover:text-violet-200 flex items-center justify-center gap-2 transition-all active:scale-95 font-medium"
+                    >
+                        <Layers className="w-3 h-3" />
+                        <span>Auto-Fill Everything</span>
+                    </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl font-bold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl font-bold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Analyzing...' : 'Generate My AI Plan ✨'}
           </button>
         </form>
+
+        {/* 🧪 DEV BUTTON: Allows you to toggle between New User & Returning User views */}
+        <button 
+          type="button" 
+          onClick={toggleSimulation}
+          className="w-full mt-4 flex items-center justify-center gap-1 text-[10px] text-gray-600 hover:text-white transition-colors"
+        >
+          <Bug className="w-3 h-3" />
+          {prevMonthData ? 'Test: Switch to New User View' : 'Test: Switch to Returning User View'}
+        </button>
+
       </div>
     </div>
   );

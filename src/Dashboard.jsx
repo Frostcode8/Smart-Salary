@@ -14,7 +14,8 @@ import {
   setDoc,
   writeBatch,
   arrayUnion,
-  getDoc
+  getDoc,
+  getDocs
 } from "firebase/firestore";
 import { db } from "./firebase.js"; 
 
@@ -45,7 +46,8 @@ import {
   ShoppingCart,
   Clock,
   Target,
-  GraduationCap
+  GraduationCap,
+  History
 } from "lucide-react";
 
 import {
@@ -67,11 +69,12 @@ import {
 } from "recharts";
 
 // ⚠️ PASTE YOUR GEMINI API KEY HERE
-const GEMINI_API_KEY = "AIzaSyB8LuU9OMZpuiHLDVffQjOFQtAGyO6Utbo"; 
+const GEMINI_API_KEY = "AIzaSyCPUiIvOnMs8Y-zeX8SiTeF4YjktDag7ZI"; 
 
 const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 🗓️ Month Selection State
   const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey);
+  const [firstMonthKey, setFirstMonthKey] = useState(null);
   
   const [monthData, setMonthData] = useState(null); 
   const [loadingMonthData, setLoadingMonthData] = useState(true); 
@@ -96,9 +99,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // Setup Form State
   const [setupFormData, setSetupFormData] = useState({
     income: '',
-    emi: '',
-    savings: '',
-    isFirstSalary: false
+    emi: ''
   });
   const [setupLoading, setSetupLoading] = useState(false);
 
@@ -128,6 +129,12 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     const date = new Date(selectedMonthKey + "-01");
     date.setMonth(date.getMonth() + offset);
     const newKey = date.toISOString().slice(0, 7);
+    
+    // ✅ Prevent going before first month
+    if (firstMonthKey && newKey < firstMonthKey) {
+      return; // Don't allow navigation before first month
+    }
+    
     setSelectedMonthKey(newKey);
   };
 
@@ -138,6 +145,42 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // -----------------------------
   // 🔥 Firestore Listeners
   // -----------------------------
+  
+  // ✅ Fetch First Month Key
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchFirstMonth = async () => {
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists() && userSnap.data()?.firstMonthKey) {
+          setFirstMonthKey(userSnap.data().firstMonthKey);
+        } else {
+          // If not set, use the earliest month from months collection
+          const monthsQuery = query(
+            collection(db, 'users', user.uid, 'months'),
+            orderBy('updatedAt', 'asc')
+          );
+          const monthsSnap = await getDocs(monthsQuery);
+          
+          if (!monthsSnap.empty) {
+            const earliestMonthId = monthsSnap.docs[0].id;
+            setFirstMonthKey(earliestMonthId);
+            
+            // Save it to user doc for future
+            await updateDoc(userRef, { firstMonthKey: earliestMonthId });
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching first month:", error);
+      }
+    };
+    
+    fetchFirstMonth();
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -583,19 +626,12 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       // 📊 Income-Based Smart Allocation
       let needsPct, wantsPct, savingsPct, emergencyPct;
 
-      if (setupFormData.isFirstSalary) {
-        // 🥉 FIRST SALARY MODE: Gentle Allocations
-        // Focus: Needs buffer (50%), Enjoyment (20%), Moderate Savings (10%), High Emergency Build (20%)
-        needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.10; emergencyPct = 0.20;
+      if (numIncome < 30000) {
+        needsPct = 0.60; wantsPct = 0.15; savingsPct = 0.15; emergencyPct = 0.10;
+      } else if (numIncome <= 70000) {
+        needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.20; emergencyPct = 0.10;
       } else {
-        // 🤖 Standard Logic
-        if (numIncome < 30000) {
-          needsPct = 0.60; wantsPct = 0.15; savingsPct = 0.15; emergencyPct = 0.10;
-        } else if (numIncome <= 70000) {
-          needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.20; emergencyPct = 0.10;
-        } else {
-          needsPct = 0.40; wantsPct = 0.20; savingsPct = 0.30; emergencyPct = 0.10;
-        }
+        needsPct = 0.40; wantsPct = 0.20; savingsPct = 0.30; emergencyPct = 0.10;
       }
 
       const budgetPlan = {
@@ -609,12 +645,10 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       const dataToSave = {
         income: setupFormData.income,
         emi: setupFormData.emi || '0',
-        firstSalary: setupFormData.isFirstSalary,
+        firstSalary: false,
         score: 100, 
         budgetPlan,
-        adviceText: setupFormData.isFirstSalary 
-          ? "Welcome to your first salary! Let's start with easy habits."
-          : "Plan created. Stick to your limits.",
+        adviceText: "Plan created. Stick to your limits.",
         spenderType: "Balanced",
         updatedAt: new Date().toISOString()
       };
@@ -629,7 +663,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       await batch.commit();
       
       setShowMonthSetupForm(false);
-      setSetupFormData({ income: '', emi: '', isFirstSalary: false });
+      setSetupFormData({ income: '', emi: '' });
 
     } catch (error) {
       console.error(error);
@@ -787,15 +821,33 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                 <input 
                   type="month" 
                   value={selectedMonthKey}
+                  min={firstMonthKey || undefined}
                   onChange={handleMonthInput}
                   className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" 
                 />
-                <button onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"><ChevronLeft className="w-4 h-4" /></button>
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    changeMonth(-1); 
+                  }} 
+                  disabled={firstMonthKey && selectedMonthKey <= firstMonthKey}
+                  className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
                 <div className="px-4 flex items-center gap-2 text-sm font-medium min-w-[140px] justify-center text-gray-200 pointer-events-none">
                   <Calendar className="w-3.5 h-3.5 text-violet-400" />
                   {monthName}
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); changeMonth(1); }} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"><ChevronRight className="w-4 h-4" /></button>
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    changeMonth(1); 
+                  }} 
+                  className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors relative z-20"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
              </div>
 
              <button onClick={onLogout} className="p-2.5 bg-white/5 hover:bg-white/10 rounded-full transition-all hover:scale-105 active:scale-95 border border-white/5 shadow-md"><LogOut className="w-4 h-4 text-gray-400" /></button>
@@ -1201,41 +1253,48 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
             <div className="absolute top-0 right-0 w-48 h-48 bg-violet-600/20 rounded-full blur-[60px] -z-10" />
             <button onClick={() => setShowMonthSetupForm(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
             <h2 className="text-2xl font-bold text-white mb-2">Setup for {monthName}</h2>
-            <p className="text-gray-400 mb-6 text-sm">We'll calculate your budget automatically.</p>
+            <p className="text-gray-400 mb-6 text-sm">
+              Let's create your financial plan for this month.
+            </p>
 
             <form onSubmit={handleMonthSetup} className="space-y-4">
-               <div className="group">
-                  <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Total Monthly Income</label>
-                  <div className="relative">
-                    <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input type="number" required min="0" placeholder="e.g. 50000" value={setupFormData.income} onChange={(e) => setSetupFormData({...setupFormData, income: e.target.value})} className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all" />
-                  </div>
-               </div>
-               <div className="group">
-                  <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Fixed EMI / Rent (Needs)</label>
-                  <div className="relative">
-                    <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input type="number" min="0" placeholder="0" value={setupFormData.emi} onChange={(e) => setSetupFormData({...setupFormData, emi: e.target.value})} className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all" />
-                  </div>
-               </div>
+              <div className="group">
+                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Total Monthly Income</label>
+                <div className="relative">
+                  <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input 
+                     type="number" 
+                     required 
+                     min="0" 
+                     placeholder="e.g. 50000" 
+                     value={setupFormData.income} 
+                     onChange={(e) => setSetupFormData({...setupFormData, income: e.target.value})} 
+                     className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all" 
+                  />
+                </div>
+              </div>
+              <div className="group">
+                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Fixed EMI / Rent (Needs)</label>
+                <div className="relative">
+                  <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input 
+                     type="number" 
+                     min="0" 
+                     placeholder="0" 
+                     value={setupFormData.emi} 
+                     onChange={(e) => setSetupFormData({...setupFormData, emi: e.target.value})} 
+                     className="w-full pl-11 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all" 
+                  />
+                </div>
+              </div>
 
-               {/* 🆕 First Salary Toggle */}
-               <div 
-                 onClick={() => setSetupFormData({ ...setupFormData, isFirstSalary: !setupFormData.isFirstSalary })}
-                 className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${setupFormData.isFirstSalary ? 'bg-violet-600/20 border-violet-500/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
-               >
-                 <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${setupFormData.isFirstSalary ? 'bg-violet-500 border-violet-500' : 'border-gray-500'}`}>
-                   {setupFormData.isFirstSalary && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-                 </div>
-                 <div>
-                   <p className={`text-sm font-semibold ${setupFormData.isFirstSalary ? 'text-violet-200' : 'text-gray-300'}`}>This is my First Salary</p>
-                   <p className="text-xs text-gray-500">Enable "Learning Mode" with softer alerts</p>
-                 </div>
-               </div>
-
-               <button type="submit" disabled={setupLoading} className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-95 transition-all mt-4 disabled:opacity-50">
-                  {setupLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : "Generate AI Plan 🚀"}
-                </button>
+              <button 
+                 type="submit"
+                 disabled={setupLoading} 
+                 className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-95 transition-all mt-4 disabled:opacity-50"
+              >
+                {setupLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : "Generate AI Plan 🚀"}
+              </button>
             </form>
           </div>
         </div>
