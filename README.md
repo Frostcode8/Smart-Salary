@@ -1,16 +1,105 @@
-# React + Vite
+# SmartSalary 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+![React](https://img.shields.io/badge/React-20232a?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Firebase](https://img.shields.io/badge/Firebase-039BE5?style=for-the-badge&logo=Firebase&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![Gemini AI](https://img.shields.io/badge/Google%20Gemini%20AI-8E75B2?style=for-the-badge&logo=google&logoColor=white)
 
-Currently, two official plugins are available:
+> **Your AI-Powered Financial Co-Pilot**  
+> SmartSalary isn't just an expense tracker — it's an intelligent financial roadmap that helps students and professionals master their money using Generative AI.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+![Dashboard Screenshot](https://via.placeholder.com/1200x600?text=SmartSalary+Dashboard+Preview)  
+*(Replace this link with an actual screenshot of your dashboard)*
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 📖 Overview
 
-## Expanding the ESLint configuration
+SmartSalary addresses the lack of financial literacy among young professionals.  
+Unlike traditional finance apps that only log expenses, SmartSalary uses **Google Gemini AI** to analyze spending behavior, predict financial health, and generate actionable weekly roadmaps.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Whether you are managing your **first salary** or trying to recover from overspending, SmartSalary adapts its strategy using modes like **Foundation Mode** and **Damage Control Mode** to guide you back to financial stability.
+
+---
+
+## ✨ Key Features
+
+### 🧠 AI-Driven Financial Roadmap
+- Generates a personalized 4-week action plan
+- Adaptive modes: Growth, Discipline, Correction, Damage Control, Foundation
+- Gamified task completion and progress tracking
+
+### 🛍️ Impulse Purchase Checker (Financial Lie Detector)
+- Evaluates purchase impact before buying
+- Shows effect on:
+  - Financial Health Score
+  - Emergency Fund timeline
+  - Savings goals
+- Gives clear approval or warning
+
+### 📊 Smart Allocation & Analytics
+- Needs vs Wants vs Savings visualization
+- First Salary Mode with gentle guidance
+- Spending calendar (daily heatmap)
+- Monthly trend comparison
+
+### 🔐 Authentication
+- Firebase Email/Password Authentication
+- Secure user sessions
+
+### 💳 Expense Management
+- Add, view, delete expenses
+- Category-based tracking
+- Date-wise entries
+
+---
+
+## 🛠️ Tech Stack
+
+**Frontend**
+- React.js (Vite)
+- Tailwind CSS
+
+**Backend & Services**
+- Firebase Authentication
+- Firebase Firestore
+
+**AI Engine**
+- Google Gemini API (Gemini 2.5 Flash)
+
+**Visualization**
+- Recharts
+
+**Icons**
+- Lucide React
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js (v16+)
+- Firebase Project
+- Google Gemini API Key
+
+---
+
+### Installation
+
+#### 1. Clone the repository
+
+```bash
+git clone https://github.com/your-username/smartsalary.git
+cd smartsalary
+
+2. Install dependencies
+npm install
+
+3. Run the application
+npm run dev
+
+
+Open:
+
+http://localhost:5173
