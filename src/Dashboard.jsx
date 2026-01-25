@@ -1,3 +1,4 @@
+import AIRoadmap from "./AIRoadmap";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -84,6 +85,10 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const [addingExpense, setAddingExpense] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false); 
   const [checkingImpulse, setCheckingImpulse] = useState(false);
+  const [showRoadmap, setShowRoadmap] = useState(false);
+
+  
+
 
   // Impulse State
   const [impulseItem, setImpulseItem] = useState({ name: "", price: "" });
@@ -759,6 +764,14 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                  >
                    <Calendar className="w-4 h-4" /> Calendar
                  </button>
+
+                 {/* 🧠 AI Roadmap Button (NEW) */}
+    <button 
+  onClick={() => setShowRoadmap(true)}
+  className="hidden sm:flex items-center gap-2 px-4 py-2 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 text-sm font-medium hover:bg-violet-500/20 transition-all active:scale-95"
+>
+  <Sparkles className="w-4 h-4" /> AI Roadmap
+</button>
                </>
              )}
 
@@ -1303,8 +1316,19 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
           </div>
         </div>
       )}
+        {/* 🧠 AI Roadmap Modal */}
+      <AIRoadmap
+        open={showRoadmap}
+        onClose={() => setShowRoadmap(false)}
+        user={user}
+        monthData={monthData}
+        records={records}
+        selectedMonthKey={selectedMonthKey}
+      />
     </div>
   );
 };
+
+
 
 export default Dashboard;
