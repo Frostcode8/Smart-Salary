@@ -135,7 +135,8 @@ With both **user-centric** and **general finance rule** modes.
 4. User adds expenses  
 5. AI analyzes behavior  
 6. Roadmap + advice update in real time  
-7. Impulse purchases are evaluated before spending  
+7. Impulse purchases are evaluated before spending
+8. Generate Investment Strategy
 
 Everything adapts month-by-month automatically.
 
