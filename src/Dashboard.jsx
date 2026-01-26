@@ -47,7 +47,8 @@ import {
   Clock,
   Target,
   GraduationCap,
-  History
+  History,
+  Layers
 } from "lucide-react";
 
 import {
@@ -91,6 +92,10 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const [checkingImpulse, setCheckingImpulse] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
   const [showInvestmentPlans, setShowInvestmentPlans] = useState(false); // ✅ Investment Modal State
+
+  // 🆕 Change 1: New State Variables for Quick Fill
+  const [lastFilledMonthData, setLastFilledMonthData] = useState(null);
+  const [checkingLastMonth, setCheckingLastMonth] = useState(false);
 
   // Impulse State
   const [impulseItem, setImpulseItem] = useState({ name: "", price: "" });
@@ -180,6 +185,44 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     
     fetchFirstMonth();
   }, [user]);
+
+  // 🆕 Change 3: Fetch Last Filled Month for Quick Fill
+  useEffect(() => {
+    if (!user || !showMonthSetupForm) return;
+
+    const fetchLastFilledMonth = async () => {
+      setCheckingLastMonth(true);
+      try {
+        // Get all months for this user, ordered by most recent
+        const monthsQuery = query(
+          collection(db, 'users', user.uid, 'months'),
+          orderBy('updatedAt', 'desc')
+        );
+        const monthsSnap = await getDocs(monthsQuery);
+
+        if (!monthsSnap.empty) {
+          // Get the most recent month with data
+          const lastMonth = monthsSnap.docs[0].data();
+          const lastMonthKey = monthsSnap.docs[0].id;
+
+          setLastFilledMonthData({
+            ...lastMonth,
+            monthKey: lastMonthKey,
+            monthName: new Date(lastMonthKey + "-01").toLocaleString('default', {
+               month: 'long',
+               year: 'numeric'
+             })
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching last filled month:", error);
+      } finally {
+        setCheckingLastMonth(false);
+      }
+    };
+
+    fetchLastFilledMonth();
+  }, [user, showMonthSetupForm]);
 
   useEffect(() => {
     if (!user) return;
@@ -645,7 +688,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       const dataToSave = {
         income: setupFormData.income,
         emi: setupFormData.emi || '0',
-        firstSalary: false,
+        // Change 4: Removed firstSalary: false logic
         score: 100, 
         budgetPlan,
         adviceText: "Plan created. Stick to your limits.",
@@ -757,6 +800,28 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         ))}
       </div>
     );
+  };
+
+  // 🆕 Change 5: Helper Functions for Quick Fill
+  const fillIncomeFromLast = () => {
+    if (lastFilledMonthData?.income) {
+      setSetupFormData(prev => ({ ...prev, income: lastFilledMonthData.income }));
+    }
+  };
+
+  const fillEmiFromLast = () => {
+    if (lastFilledMonthData?.emi) {
+      setSetupFormData(prev => ({ ...prev, emi: lastFilledMonthData.emi }));
+    }
+  };
+
+  const fillBothFromLast = () => {
+    if (lastFilledMonthData) {
+      setSetupFormData({
+        income: lastFilledMonthData.income || '',
+        emi: lastFilledMonthData.emi || ''
+      });
+    }
   };
 
   return (
@@ -1246,12 +1311,15 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         </div>
       )}
 
-      {/* ✅ Month Setup Modal */}
+      {/* ✅ Month Setup Modal (Change 6: New JSX) */}
       {showMonthSetupForm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-lg shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
             <div className="absolute top-0 right-0 w-48 h-48 bg-violet-600/20 rounded-full blur-[60px] -z-10" />
-            <button onClick={() => setShowMonthSetupForm(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
+            <button onClick={() => setShowMonthSetupForm(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+            
             <h2 className="text-2xl font-bold text-white mb-2">Setup for {monthName}</h2>
             <p className="text-gray-400 mb-6 text-sm">
               Let's create your financial plan for this month.
@@ -1259,7 +1327,9 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
             <form onSubmit={handleMonthSetup} className="space-y-4">
               <div className="group">
-                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Total Monthly Income</label>
+                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">
+                  Total Monthly Income
+                </label>
                 <div className="relative">
                   <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <input 
@@ -1273,8 +1343,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                   />
                 </div>
               </div>
+              
               <div className="group">
-                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">Fixed EMI / Rent (Needs)</label>
+                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider ml-1">
+                  Fixed EMI / Rent (Needs)
+                </label>
                 <div className="relative">
                   <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <input 
@@ -1287,6 +1360,56 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                   />
                 </div>
               </div>
+
+              {/* ⚡ NEW: Auto-fill from Last Filled Month */}
+              {checkingLastMonth ? (
+                <div className="h-20 w-full bg-white/5 animate-pulse rounded-xl" />
+              ) : lastFilledMonthData ? (
+                <div className="bg-white/5 border border-white/5 rounded-xl p-3 animate-in fade-in slide-in-from-right duration-300">
+                  <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
+                    <History className="w-3 h-3 text-violet-400" />
+                    <span className="uppercase tracking-wider font-semibold">
+                      Quick Fill from {lastFilledMonthData.monthName}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      {lastFilledMonthData.income && (
+                        <button 
+                          type="button"
+                          onClick={fillIncomeFromLast}
+                          className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
+                        >
+                          <span>Income: ₹{lastFilledMonthData.income}</span>
+                          <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
+                        </button>
+                      )}
+                      {lastFilledMonthData.emi && parseFloat(lastFilledMonthData.emi) > 0 && (
+                        <button 
+                          type="button"
+                          onClick={fillEmiFromLast}
+                          className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
+                        >
+                          <span>EMI: ₹{lastFilledMonthData.emi}</span>
+                          <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Fill Both Button */}
+                    {lastFilledMonthData.income && lastFilledMonthData.emi && parseFloat(lastFilledMonthData.emi) > 0 && (
+                      <button 
+                        type="button"
+                        onClick={fillBothFromLast}
+                        className="w-full py-2 px-3 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 rounded-lg text-xs text-violet-300 hover:text-violet-200 flex items-center justify-center gap-2 transition-all active:scale-95 font-medium"
+                      >
+                        <Layers className="w-3 h-3" />
+                        <span>Auto-Fill Everything</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
 
               <button 
                  type="submit"
