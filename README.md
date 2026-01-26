@@ -8,8 +8,11 @@
 > **Your AI-Powered Financial Co-Pilot**  
 > SmartSalary isn't just an expense tracker — it's an intelligent financial roadmap that helps students and professionals master their money using Generative AI.
 
-![Dashboard Screenshot](https://via.placeholder.com/1200x600?text=SmartSalary+Dashboard+Preview)  
-*(Replace this link with an actual screenshot of your dashboard)*
+### 🔹 Landing Page
+![Landing Page](screenshots/landing.png)
+
+### 🔹 Dashboard
+![Dashboard](screenshots/dashboard.png)
 
 ---
 
