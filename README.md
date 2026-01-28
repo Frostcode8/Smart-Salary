@@ -1,105 +1,176 @@
-# SmartSalary 🚀
+# 🚀 SmartSalary — Your AI Financial Co-Pilot
 
 ![React](https://img.shields.io/badge/React-20232a?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Firebase](https://img.shields.io/badge/Firebase-039BE5?style=for-the-badge&logo=Firebase&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 ![Gemini AI](https://img.shields.io/badge/Google%20Gemini%20AI-8E75B2?style=for-the-badge&logo=google&logoColor=white)
 
-> **Your AI-Powered Financial Co-Pilot**  
-> SmartSalary isn't just an expense tracker — it's an intelligent financial roadmap that helps students and professionals master their money using Generative AI.
-
-![Dashboard Screenshot](https://via.placeholder.com/1200x600?text=SmartSalary+Dashboard+Preview)  
-*(Replace this link with an actual screenshot of your dashboard)*
+> **SmartSalary is an AI-powered personal finance operating system**  
+> built to help students and working professionals turn their salary into structured wealth using intelligent budgeting, behavior analysis, and adaptive financial roadmaps.
 
 ---
 
-## 📖 Overview
+## 🖥️ Product Preview
 
-SmartSalary addresses the lack of financial literacy among young professionals.  
-Unlike traditional finance apps that only log expenses, SmartSalary uses **Google Gemini AI** to analyze spending behavior, predict financial health, and generate actionable weekly roadmaps.
+### 🌟 Landing Page  
+*AI-powered financial onboarding experience*  
+![Landing Page](screenshots/landing.png)
 
-Whether you are managing your **first salary** or trying to recover from overspending, SmartSalary adapts its strategy using modes like **Foundation Mode** and **Damage Control Mode** to guide you back to financial stability.
+### 📊 Smart Dashboard  
+*Live financial health, spending, savings, and AI insights*  
+![Dashboard](screenshots/dashboard.png)
 
 ---
 
-## ✨ Key Features
+## 🧠 What is SmartSalary?
 
-### 🧠 AI-Driven Financial Roadmap
-- Generates a personalized 4-week action plan
-- Adaptive modes: Growth, Discipline, Correction, Damage Control, Foundation
-- Gamified task completion and progress tracking
+Most finance apps only show **what you spent**.  
+SmartSalary tells you **what to do next**.
 
-### 🛍️ Impulse Purchase Checker (Financial Lie Detector)
-- Evaluates purchase impact before buying
-- Shows effect on:
-  - Financial Health Score
-  - Emergency Fund timeline
-  - Savings goals
-- Gives clear approval or warning
+SmartSalary combines:
+- Real-time expense tracking  
+- AI-driven financial analysis  
+- Behavioral psychology  
+- Goal-based budgeting  
 
-### 📊 Smart Allocation & Analytics
-- Needs vs Wants vs Savings visualization
-- First Salary Mode with gentle guidance
-- Spending calendar (daily heatmap)
-- Monthly trend comparison
+to build a **monthly financial game plan** for each user.
 
-### 🔐 Authentication
-- Firebase Email/Password Authentication
-- Secure user sessions
+It adapts automatically based on:
+- Your income
+- EMI / loans
+- Spending behavior
+- Savings gap
+- Whether it’s your **first salary month**
 
-### 💳 Expense Management
-- Add, view, delete expenses
-- Category-based tracking
-- Date-wise entries
+---
+
+## 🎯 Core Capabilities
+
+### 🧭 AI Financial Roadmap
+Every month, SmartSalary creates a **4-week financial mission plan**:
+- Foundation Mode (first salary or new users)
+- Growth Mode (healthy finances)
+- Discipline Mode (too many impulse buys)
+- Correction Mode (overspending)
+- Damage Control Mode (negative savings)
+
+Each roadmap contains:
+- Weekly goals  
+- Spending limits  
+- Score rewards & penalties  
+- Progress tracking  
+
+---
+
+### 🛍️ Impulse Purchase Checker  
+**Your financial lie detector**
+
+Before buying anything:
+- Enter product name & price  
+- See how it affects:
+  - Savings
+  - Emergency fund
+  - Financial score
+  - Delay in financial goals  
+- Get AI-generated tradeoffs & warnings  
+
+---
+
+### 📊 Smart Budget Allocation
+Your salary is automatically split into:
+- Needs
+- Wants
+- Savings
+- Emergency fund
+- Investments  
+
+The dashboard tracks:
+- Real savings vs target  
+- Category-wise spending  
+- Monthly trends  
+- Spending heatmap  
+
+---
+
+### 💎 Investment Strategy Engine
+Get **personalized investment plans**:
+- Equity SIPs  
+- Safe assets (PPF / Debt)  
+- Gold hedge  
+With both **user-centric** and **general finance rule** modes.
+
+---
+
+## 🔐 Authentication & Data Layer
+- Firebase Authentication (Email / Password)  
+- Firestore real-time database  
+- Month-wise financial records  
+- User-specific AI roadmaps  
+- Live syncing across sessions  
 
 ---
 
 ## 🛠️ Tech Stack
 
 **Frontend**
-- React.js (Vite)
-- Tailwind CSS
+- React (Vite)  
+- Tailwind CSS  
+- Lucide Icons  
+- Recharts  
 
-**Backend & Services**
-- Firebase Authentication
-- Firebase Firestore
+**Backend**
+- Firebase Authentication  
+- Firebase Firestore  
 
 **AI Engine**
-- Google Gemini API (Gemini 2.5 Flash)
-
-**Visualization**
-- Recharts
-
-**Icons**
-- Lucide React
+- Google Gemini 2.5 Flash API  
 
 ---
 
-## 🚀 Getting Started
+## ⚙️ How It Works
 
-### Prerequisites
+1. User signs up  
+2. Enters income, EMI, and first-salary status  
+3. SmartSalary creates a budget plan  
+4. User adds expenses  
+5. AI analyzes behavior  
+6. Roadmap + advice update in real time  
+7. Impulse purchases are evaluated before spending
+8. Generate Investment Strategy
 
-- Node.js (v16+)
-- Firebase Project
-- Google Gemini API Key
+Everything adapts month-by-month automatically.
 
 ---
 
-### Installation
-
-#### 1. Clone the repository
+## 🚀 Running Locally
 
 ```bash
-git clone https://github.com/your-username/smartsalary.git
-cd smartsalary
-
-2. Install dependencies
+git clone https://github.com/Frostcode8/Smart-Salary.git
+cd Smart-Salary
 npm install
-
-3. Run the application
 npm run dev
-
-
-Open:
-
+```
+Open the application in your browser:
 http://localhost:5173
+
+---
+
+## 🌟 Why SmartSalary is Different
+
+Most finance apps only **track** your money.  
+SmartSalary actively **guides** it.
+
+**SmartSalary is not:**
+- A spreadsheet  
+- A boring budget app  
+- A passive expense tracker  
+
+**SmartSalary is:**
+- A **financial coach**
+- A **decision engine**
+- A **behavior correction system**
+- A **money-management game**
+
+Built for people who want **clarity, control, and long-term financial growth**.
+
+---
