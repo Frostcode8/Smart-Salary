@@ -7,7 +7,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "./firebase.js";
 
-const GEMINI_API_KEY = "AIzaSyCPUiIvOnMs8Y-zeX8SiTeF4YjktDag7ZI";
+const GEMINI_API_KEY = "AIzaSyAfiqB6IQz8R7Ftstjxc2EShKMs8vHU4dI";
 
 // 🎨 Circular Progress Component
 const ProgressRing = ({ radius, stroke, progress, color }) => {

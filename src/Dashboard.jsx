@@ -1,7 +1,8 @@
-import AIRoadmap from "./AIRoadmap.jsx";
-import InvestmentPlans from "./InvestmentPlans.jsx"; 
 import React, { useEffect, useMemo, useState } from "react";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import {
+  getFirestore,
   collection,
   query,
   orderBy,
@@ -17,8 +18,6 @@ import {
   getDoc,
   getDocs
 } from "firebase/firestore";
-import { db } from "./firebase.js"; 
-
 import {
   LogOut,
   Plus,
@@ -48,7 +47,20 @@ import {
   Target,
   GraduationCap,
   History,
-  Layers
+  Layers,
+  HelpCircle,
+  RefreshCw,
+  Lock,
+  Trophy,
+  Flame,
+  Swords,
+  Shield,
+  PieChart as IconPieChart,
+  ToggleLeft,
+  ToggleRight,
+  Info,
+  Award,
+  DollarSign
 } from "lucide-react";
 
 import {
@@ -69,8 +81,806 @@ import {
   Line
 } from "recharts";
 
-// ⚠️ PASTE YOUR GEMINI API KEY HERE
-const GEMINI_API_KEY = "AIzaSyCPUiIvOnMs8Y-zeX8SiTeF4YjktDag7ZI"; 
+// ------------------------------------------------------------------
+// 🔥 FIREBASE INITIALIZATION (Inline for Single File Environment)
+// ------------------------------------------------------------------
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+// ✅ FIXED: Check if app already exists before initializing to prevent "duplicate-app" error
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+const GEMINI_API_KEY = "AIzaSyAfiqB6IQz8R7Ftstjxc2EShKMs8vHU4dI";
+
+// ------------------------------------------------------------------
+// 🧩 COMPONENT: InvestmentPlans
+// ------------------------------------------------------------------
+function InvestmentPlans({ open, onClose, income }) {
+  const [showPersonalized, setShowPersonalized] = useState(true);
+
+  if (!open) return null;
+
+  // 💰 Calculations for User-Centric Data
+  const monthlyInvestable = Math.round(income * 0.20); // 20% of income rule
+  const sipAmount = Math.round(monthlyInvestable * 0.60); // 60% of savings to Equity
+  const safeAmount = Math.round(monthlyInvestable * 0.30); // 30% to Debt/PPF
+  const goldAmount = Math.round(monthlyInvestable * 0.10); // 10% to Gold
+
+  // 📄 Content Data
+  const plans = [
+    {
+      title: "Wealth Creation (High Growth)",
+      icon: TrendingUp,
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-500/20",
+      desc: "Best for long-term goals (>5 years). Equity Mutual Funds offer high returns over time.",
+      userAmount: `₹${sipAmount.toLocaleString()}/mo`,
+      genericText: "Start an SIP with 10-15% of your salary in Index Funds or Flexi-cap Funds."
+    },
+    {
+      title: "Safety Net (Risk-Free)",
+      icon: Shield,
+      color: "text-blue-400",
+      bg: "bg-blue-500/10",
+      border: "border-blue-500/20",
+      desc: "Guaranteed returns. PPF (Public Provident Fund) or recurring deposits.",
+      userAmount: `₹${safeAmount.toLocaleString()}/mo`,
+      genericText: "Allocate 5-10% to PPF or Govt Bonds. Essential for stability."
+    },
+    {
+      title: "Gold / Hedge",
+      icon: Award,
+      color: "text-yellow-400",
+      bg: "bg-yellow-500/10",
+      border: "border-yellow-500/20",
+      desc: "Hedge against inflation. Sovereign Gold Bonds (SGB) earn 2.5% interest + appreciation.",
+      userAmount: `₹${goldAmount.toLocaleString()}/mo`,
+      genericText: "Buy digital gold or SGBs with 5% of monthly income. Avoid jewelry for investment."
+    }
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-xl flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+      <div className="bg-[#0f111a] border border-white/10 rounded-none sm:rounded-[2rem] w-full max-w-4xl h-full sm:h-[85vh] flex flex-col shadow-2xl relative overflow-hidden">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#121215]">
+          <div>
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <IconPieChart className="w-5 h-5 text-violet-400" />
+              Investment Strategy
+            </h2>
+            <p className="text-xs text-gray-400 mt-1">Smart allocation based on financial best practices</p>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            {/* Toggle Switch */}
+            <button 
+              onClick={() => setShowPersonalized(!showPersonalized)}
+              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-xs text-gray-300"
+            >
+              {showPersonalized ? <ToggleRight className="w-4 h-4 text-violet-400" /> : <ToggleLeft className="w-4 h-4 text-gray-500" />}
+              {showPersonalized ? "User Centric Mode" : "General Mode"}
+            </button>
+
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <X className="w-6 h-6 text-gray-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Toggle (Visible only on small screens) */}
+        <div className="sm:hidden px-6 py-3 border-b border-white/5 bg-[#121215]">
+           <button 
+              onClick={() => setShowPersonalized(!showPersonalized)}
+              className="flex w-full justify-between items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-xs text-gray-300"
+            >
+              <span>{showPersonalized ? "Showing Your Numbers" : "Showing General Rules"}</span>
+              {showPersonalized ? <ToggleRight className="w-5 h-5 text-violet-400" /> : <ToggleLeft className="w-5 h-5 text-gray-500" />}
+            </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 bg-[#0a0a0f] space-y-6">
+          
+          {/* Summary Card */}
+          <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-900/20 to-fuchsia-900/20 border border-violet-500/20 text-center">
+            <p className="text-sm text-violet-200 uppercase tracking-wider font-semibold mb-2">Total Monthly Investment Potential</p>
+            <h3 className="text-4xl font-bold text-white mb-2">
+              {showPersonalized ? `₹${monthlyInvestable.toLocaleString()}` : "20% of Salary"}
+            </h3>
+            <p className="text-xs text-gray-400 max-w-md mx-auto">
+              {showPersonalized 
+                ? "Based on your income, this is the recommended amount to set aside for future growth." 
+                : "Financial experts recommend saving at least 20% of your income strictly for investments."}
+            </p>
+          </div>
+
+          {/* Plan Cards */}
+          <div className="grid md:grid-cols-3 gap-6">
+            {plans.map((plan, index) => (
+              <div key={index} className={`p-5 rounded-2xl border ${plan.bg} ${plan.border} flex flex-col`}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`p-2 rounded-lg bg-black/20 ${plan.color}`}>
+                    <plan.icon className="w-5 h-5" />
+                  </div>
+                  <h4 className="font-bold text-white text-sm">{plan.title}</h4>
+                </div>
+                
+                <div className="mb-4">
+                  <span className={`text-2xl font-bold ${plan.color}`}>
+                    {showPersonalized ? plan.userAmount : "Allocation Rule"}
+                  </span>
+                </div>
+
+                <p className="text-xs text-gray-300 leading-relaxed mb-4 flex-1">
+                  {showPersonalized ? plan.desc : plan.genericText}
+                </p>
+
+                {showPersonalized && (
+                  <div className="mt-auto pt-3 border-t border-white/5">
+                    <p className="text-[10px] text-gray-500 flex items-center gap-1">
+                      <Info className="w-3 h-3" /> Recommended Action
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Disclaimer */}
+          <div className="text-[10px] text-gray-600 text-center pt-8 pb-4">
+            Disclaimer: This is generated advice based on standard financial principles. 
+            Please consult a certified financial advisor before making actual investments.
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------
+// 🧩 COMPONENT: AIRoadmap
+// ------------------------------------------------------------------
+
+// 🎨 Circular Progress Component
+const ProgressRing = ({ radius, stroke, progress, color }) => {
+  const normalizedRadius = radius - stroke * 2;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: radius * 2, height: radius * 2 }}>
+      <svg
+        height={radius * 2}
+        width={radius * 2}
+        className="rotate-[-90deg] absolute inset-0"
+      >
+        <circle
+          stroke="rgba(255,255,255,0.1)"
+          strokeWidth={stroke}
+          fill="transparent"
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        <circle
+          stroke="currentColor"
+          fill="transparent"
+          strokeWidth={stroke}
+          strokeDasharray={circumference + ' ' + circumference}
+          style={{ strokeDashoffset, transition: "stroke-dashoffset 0.5s ease-in-out" }}
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+          className={color}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span className={`text-sm font-bold ${color}`}>{Math.round(progress)}%</span>
+        <span className="text-[8px] text-gray-500 uppercase tracking-tighter">Progress</span>
+      </div>
+    </div>
+  );
+};
+
+// Helper for date suffixes (1st, 2nd, 3rd)
+function getOrdinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
+
+function AIRoadmap({
+  open,
+  onClose,
+  user,
+  monthData,
+  records,
+  selectedMonthKey
+}) {
+  const [loading, setLoading] = useState(false);
+  const [roadmap, setRoadmap] = useState(null);
+  const [mode, setMode] = useState(null);
+  const [whyText, setWhyText] = useState("");
+  const [whyLoading, setWhyLoading] = useState(false);
+  const [activeStepInfo, setActiveStepInfo] = useState(null);
+  const [verdict, setVerdict] = useState(null);
+  const [isRegenerating, setIsRegenerating] = useState(false); // New state for regeneration flow
+  
+  // 🎮 Difficulty State
+  const [difficulty, setDifficulty] = useState("Normal");
+
+  // Safe data access
+  const safeMonthData = monthData || {};
+  const safeBudgetPlan = safeMonthData.budgetPlan || {};
+
+  // -----------------------------
+  // 🧠 USER CONTEXT CALCULATIONS
+  // -----------------------------
+  const income = parseFloat(safeMonthData.income || 0);
+  const emi = parseFloat(safeMonthData.emi || 0);
+  const score = safeMonthData.score || 0;
+  const isFirstSalary = safeMonthData.firstSalary === true;
+  
+  const needsLimit = safeBudgetPlan.needs || 0;
+  const wantsLimit = safeBudgetPlan.wants || 0;
+  const savingsTarget = safeBudgetPlan.savings || 0;
+  const emergencyTarget = safeBudgetPlan.emergency || 0;
+
+  const currentMonthExpenses = useMemo(() => {
+    if (!records) return [];
+    return records.filter(r => {
+      const m = r.createdAt?.seconds
+        ? new Date(r.createdAt.seconds * 1000).toISOString().slice(0, 7)
+        : "";
+      return m === selectedMonthKey && r.type === "expense";
+    });
+  }, [records, selectedMonthKey]);
+
+  const needsUsed = useMemo(() => {
+    const expenses = currentMonthExpenses
+      .filter(r => (r.needType || "need") === "need")
+      .reduce((sum, r) => sum + (r.amount || 0), 0);
+    return expenses + emi; 
+  }, [currentMonthExpenses, emi]);
+
+  const wantsUsed = useMemo(() => currentMonthExpenses
+    .filter(r => r.needType === "want")
+    .reduce((s, r) => s + r.amount, 0), [currentMonthExpenses]);
+
+  const shoppingTotal = useMemo(() => currentMonthExpenses
+    .filter(r => r.category === "Shopping")
+    .reduce((s, r) => s + r.amount, 0), [currentMonthExpenses]);
+
+  const totalExpense = useMemo(() => currentMonthExpenses
+    .reduce((sum, r) => sum + (r.amount || 0), 0), [currentMonthExpenses]);
+
+  const realSavings = income - needsUsed - wantsUsed;
+  const savingsGap = savingsTarget - realSavings;
+  const impulseCount = safeMonthData.impulseHistory?.length || 0;
+
+  // ⏱️ Time Left Calculation (Fixed)
+  const daysInMonth = useMemo(() => {
+    const [year, month] = selectedMonthKey.split("-").map(Number);
+    return new Date(year, month, 0).getDate();
+  }, [selectedMonthKey]);
+
+  const todayDate = new Date().getDate();
+  
+  // ✅ NEW LOGIC: Detect Past, Present, Future
+  const currentMonthKey = new Date().toISOString().slice(0,7);
+  const isCurrentMonth = selectedMonthKey === currentMonthKey;
+  const isPastMonth = selectedMonthKey < currentMonthKey;
+  const isFutureMonth = selectedMonthKey > currentMonthKey;
+
+  const daysLeft = isCurrentMonth
+    ? Math.max(0, daysInMonth - todayDate)
+    : isFutureMonth
+      ? daysInMonth // Future: Full month available
+      : 0;          // Past: Month ended
+
+  const monthProgress = Math.min(100, (todayDate / daysInMonth) * 100);
+
+  // -----------------------------
+  // 📂 GENERATE OR LOAD ROADMAP
+  // -----------------------------
+  useEffect(() => {
+    if (!open || !monthData || !user) return;
+
+    const fetchRoadmap = async () => {
+      setLoading(true);
+      try {
+        const ref = doc(db, "users", user.uid, "roadmaps", selectedMonthKey);
+        const snap = await getDoc(ref);
+
+        if (snap.exists()) {
+          const data = snap.data();
+          setMode(data.mode);
+          setRoadmap(data.weekly_roadmap);
+          // Set difficulty if it exists in saved data, else default
+          if (data.difficulty) setDifficulty(data.difficulty);
+          if (data.verdict) setVerdict(data.verdict);
+        } else {
+          setRoadmap(null);
+        }
+      } catch (error) {
+        console.error("Error loading roadmap:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRoadmap();
+  }, [open, selectedMonthKey, user, monthData]);
+
+  // -----------------------------
+  // 🧠 AI GENERATION LOGIC
+  // -----------------------------
+  const generateRoadmap = async () => {
+    setLoading(true);
+    try {
+      const promptData = {
+        MONTH: selectedMonthKey,
+        INCOME: income,
+        SAVINGS_GAP: savingsGap,
+        SCORE: score,
+        FIRST_SALARY: isFirstSalary,
+        WANTS_USED: wantsUsed,
+        WANTS_LIMIT: wantsLimit,
+        IMPULSE_COUNT: impulseCount,
+        DIFFICULTY: difficulty // 🎮 Passing Difficulty to AI
+      };
+
+      const prompt = `
+        Create a 4-week financial roadmap JSON for month ${selectedMonthKey}.
+        User Data: ${JSON.stringify(promptData)}
+
+        STRICT RULES:
+        1. Mode Logic (Pick ONE):
+           - "Foundation Mode" (Blue) if first_salary=true or no history
+           - "Damage Control Mode" (Red) if savings < 0 or score < 40
+           - "Correction Mode" (Amber) if wants > limit
+           - "Discipline Mode" (Violet) if impulse > 3
+           - "Growth Mode" (Green) otherwise
+        
+        2. Difficulty Adjustment:
+           - "Easy": Fewer tasks (max 3/week), very lenient limits. Focus on quick wins.
+           - "Normal": Balanced (approx 4-5 tasks/week). Standard limits.
+           - "Hard": Stricter limits (cut wants by 20%), more tasks (6/week). Score impact should be 1.5x higher.
+
+        3. Output Format (JSON ONLY):
+        {
+          "mode": "String",
+          "weekly_roadmap": [
+            {
+              "week": 1,
+              "focus": "string",
+              "actions": [
+                {
+                  "id": "W1-A1",
+                  "task": "string (e.g. Spend ≤ ₹3000 in Food)",
+                  "deadline_day": 7,
+                  "success_condition": "string",
+                  "score_impact_if_completed": 5, // Scale this based on Difficulty
+                  "score_impact_if_ignored": -5,
+                  "completed": false
+                }
+              ]
+            }
+          ]
+        }
+        
+        4. Task Format: Use EXACT phrase "Spend ≤ ₹X in CATEGORY" so I can parse it for progress bars.
+      `;
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        }
+      );
+
+      const data = await res.json();
+      let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (text) {
+        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+        const aiPlan = JSON.parse(text);
+
+        const ref = doc(db, "users", user.uid, "roadmaps", selectedMonthKey);
+        await setDoc(ref, { 
+          ...aiPlan, 
+          difficulty, // Save difficulty preference
+          createdAt: new Date().toISOString() 
+        });
+
+        setMode(aiPlan.mode);
+        setRoadmap(aiPlan.weekly_roadmap);
+        setIsRegenerating(false); // Reset regeneration state
+      }
+    } catch (error) {
+      console.error("AI Gen Error", error);
+      alert("AI Generation failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleTask = async (wIdx, aIdx) => {
+    if (!roadmap) return;
+    const newMap = [...roadmap];
+    newMap[wIdx].actions[aIdx].completed = !newMap[wIdx].actions[aIdx].completed;
+    setRoadmap(newMap);
+    await updateDoc(doc(db, "users", user.uid, "roadmaps", selectedMonthKey), { weekly_roadmap: newMap });
+  };
+
+  const explainWhy = async (task, id) => {
+    if (activeStepInfo === id) { setActiveStepInfo(null); return; }
+    setActiveStepInfo(id);
+    setWhyLoading(true);
+    
+    // Quick tailored response based on mode
+    const text = mode === "Damage Control Mode" ? "Stops the bleeding immediately." : 
+                 mode === "Growth Mode" ? "Accelerates your wealth compounding." :
+                 "Builds the habit necessary for your next financial level.";
+    
+    // Simulate AI delay for trust
+    setTimeout(() => {
+        setWhyText(text);
+        setWhyLoading(false);
+    }, 800);
+  };
+
+  // -----------------------------
+  // 🎨 STYLING & PARSING
+  // -----------------------------
+  const getModeInfo = (m) => {
+    switch(m) {
+      case "Foundation Mode": return { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/50 shadow-[0_0_20px_-5px_rgba(59,130,246,0.3)]" };
+      case "Damage Control Mode": return { color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/50 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]" };
+      case "Correction Mode": return { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/50 shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)]" };
+      case "Discipline Mode": return { color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/50 shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]" };
+      case "Growth Mode": return { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/50 shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)]" };
+      default: return { color: "text-gray-400", bg: "bg-gray-800", border: "border-gray-700" };
+    }
+  };
+
+  const modeStyle = getModeInfo(mode);
+
+  // 📊 Calculate Stats
+  const totalTasks = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.length, 0) : 0;
+  const completedTasks = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.filter(a => a.completed).length, 0) : 0;
+  const progressPct = totalTasks ? (completedTasks / totalTasks) * 100 : 0;
+  
+  const ringColor = progressPct > 70 ? "text-emerald-500" : progressPct > 40 ? "text-amber-500" : "text-red-500";
+
+  const potentialReward = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.reduce((s, a) => s + (a.score_impact_if_completed || 0), 0), 0) : 0;
+  const potentialPenalty = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.reduce((s, a) => s + (a.score_impact_if_ignored || 0), 0), 0) : 0;
+
+  // 🕵️ Parse "Spend <= X in Category" to get progress
+  const getTaskProgress = (taskStr) => {
+    // Regex to find "Spend <= 3000 in Food" or similar
+    const match = taskStr.match(/Spend\s*(?:≤|<=)\s*[₹]?([\d,]+)\s*in\s*(\w+)/i);
+    if (match) {
+        const limit = parseFloat(match[1].replace(/,/g, ''));
+        const category = match[2];
+        
+        // Calculate used for this category
+        const used = currentMonthExpenses
+            .filter(r => r.category.toLowerCase() === category.toLowerCase())
+            .reduce((s, r) => s + r.amount, 0);
+            
+        return { used, limit, category };
+    }
+    return null;
+  };
+
+  // 🎮 Difficulty Color Helper
+  const getDifficultyColor = (level) => {
+    switch (level) {
+      case "Easy": return "bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_-2px_rgba(16,185,129,0.3)]";
+      case "Normal": return "bg-blue-500/20 text-blue-400 border border-blue-500/50 shadow-[0_0_10px_-2px_rgba(59,130,246,0.3)]";
+      case "Hard": return "bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_10px_-2px_rgba(239,68,68,0.3)]";
+      default: return "";
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+      <div className="bg-[#0f111a] border border-white/10 rounded-none sm:rounded-[2rem] w-full max-w-4xl h-full sm:h-[90vh] flex flex-col shadow-2xl relative overflow-hidden">
+        
+        {/* 🎯 1. Header with Mode Badge */}
+        <div className="p-6 border-b border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#121215]">
+          <div className="flex items-center gap-4">
+            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors sm:hidden">
+                <X className="w-5 h-5 text-gray-400" />
+            </button>
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                Monthly Roadmap
+                <span className="text-xs text-gray-500 font-normal bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                    {selectedMonthKey}
+                </span>
+              </h2>
+              {mode && !isRegenerating && (
+                <div className={`mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${modeStyle.bg} ${modeStyle.color} ${modeStyle.border} animate-[pulse_3s_infinite]`}>
+                  <Sparkles className="w-3 h-3" />
+                  Current Mode: {mode}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
+             {/* 📊 2. Progress Ring - Only show if not regenerating */}
+             {!isRegenerating && (
+               <div className="flex items-center gap-3">
+                 <ProgressRing radius={28} stroke={4} progress={progressPct} color={ringColor} />
+                 <div className="hidden sm:block">
+                   <p className="text-xs text-gray-400">Tasks Completed</p>
+                   <p className="text-sm font-bold text-white">{completedTasks} / {totalTasks}</p>
+                 </div>
+               </div>
+             )}
+             
+             <div className="flex items-center gap-2">
+                {/* 🔄 Regenerate Button */}
+                {roadmap && !isRegenerating && (
+                  <button 
+                    onClick={() => setIsRegenerating(true)} 
+                    className="p-2 hover:bg-white/10 rounded-full transition-colors text-violet-400 hover:text-violet-300"
+                    title="Regenerate Roadmap"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                  </button>
+                )}
+                {isRegenerating && (
+                  <button 
+                    onClick={() => setIsRegenerating(false)} 
+                    className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-gray-300"
+                    title="Cancel Regeneration"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+                <button onClick={onClose} className="hidden sm:block p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X className="w-6 h-6 text-gray-400" />
+                </button>
+             </div>
+          </div>
+        </div>
+
+        {/* ⏱️ 5. Time Left Bar (Updated Logic) */}
+        <div className="px-6 py-2 bg-black/40 border-b border-white/5 flex items-center gap-4">
+            <span className="text-xs text-gray-400 flex items-center gap-1 min-w-fit">
+                <Clock className="w-3 h-3" /> 
+                {daysLeft > 0 
+                  ? `${daysLeft} days ${isFutureMonth ? 'available' : 'left'}` 
+                  : isPastMonth 
+                    ? "Month Ended" 
+                    : "Last Day"}
+            </span>
+            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                <div 
+                    className={`h-full rounded-full transition-all duration-1000 ${daysLeft < 5 && !isFutureMonth ? "bg-red-500" : "bg-violet-500"}`} 
+                    style={{ width: `${isFutureMonth ? 100 : isCurrentMonth ? (100 - monthProgress) : 0}%` }} 
+                />
+            </div>
+        </div>
+
+        {/* 🏆 6 & 7. Rewards & Consequences */}
+        {roadmap && !isRegenerating && (
+            <div className="grid grid-cols-2 border-b border-white/5">
+                <div className="p-3 text-center border-r border-white/5 bg-emerald-500/5">
+                    <p className="text-[10px] text-emerald-400 uppercase tracking-wider font-bold mb-1 flex items-center justify-center gap-1">
+                        <Trophy className="w-3 h-3" /> Reward Preview
+                    </p>
+                    <p className="text-xs text-gray-400">Complete all → <span className="text-white font-bold">+{potentialReward} Score</span></p>
+                </div>
+                <div className="p-3 text-center bg-red-500/5">
+                    <p className="text-[10px] text-red-400 uppercase tracking-wider font-bold mb-1 flex items-center justify-center gap-1">
+                        <Flame className="w-3 h-3" /> Failure Risk
+                    </p>
+                    <p className="text-xs text-gray-400">Miss 2 tasks → <span className="text-white font-bold">{potentialPenalty} Score</span></p>
+                </div>
+            </div>
+        )}
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin scrollbar-thumb-white/10 bg-[#0a0a0f]">
+          {(!roadmap || isRegenerating) ? (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-violet-600/20 to-fuchsia-600/20 rounded-full flex items-center justify-center mb-6 animate-pulse ring-4 ring-violet-500/10">
+                <Target className="w-10 h-10 text-violet-400" />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-2">{isRegenerating ? "Regenerate Roadmap" : "Analyze & Plan"}</h3>
+              <p className="text-gray-400 max-w-xs mb-6 text-sm">
+                AI is ready to analyze your {selectedMonthKey} spending and build a winning strategy.
+              </p>
+
+              {/* 🎮 Difficulty Toggle */}
+              <div className="flex gap-2 mb-8 bg-black/40 p-1.5 rounded-xl border border-white/10 w-full max-w-xs shadow-inner">
+                {["Easy", "Normal", "Hard"].map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => setDifficulty(level)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                      difficulty === level
+                        ? getDifficultyColor(level)
+                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                    }`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={generateRoadmap}
+                disabled={loading}
+                className="px-8 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl font-bold text-white shadow-lg shadow-violet-500/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                {loading ? "Analyzing..." : "Generate Roadmap"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-8 pb-10">
+              {/* Difficulty Indicator in Header */}
+              <div className="flex justify-end mb-2">
+                 <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${getDifficultyColor(difficulty)}`}>
+                    {difficulty} Mode
+                 </span>
+              </div>
+
+              {roadmap.map((weekData, wIdx) => (
+                <div key={wIdx} className="relative pl-6 sm:pl-8 border-l border-white/10">
+                  <div className={`absolute -left-[14px] top-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border ${
+                      weekData.actions.every(a => a.completed) 
+                      ? "bg-emerald-500 border-emerald-400 text-black" 
+                      : "bg-[#18181b] border-white/20 text-gray-500"
+                  }`}>
+                    {weekData.actions.every(a => a.completed) ? <CheckCircle className="w-4 h-4" /> : `W${weekData.week}`}
+                  </div>
+                  
+                  <div className="mb-4">
+                    <h4 className="text-lg font-bold text-white">{weekData.focus}</h4>
+                  </div>
+
+                  {/* 📋 3. Task Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {weekData.actions.map((action, aIdx) => {
+                      const progressData = getTaskProgress(action.task);
+                      const isOverdue = !action.completed && todayDate > action.deadline_day;
+                      
+                      // Card Status Logic
+                      let statusText = "Pending";
+                      let statusColor = "text-gray-400 bg-white/5 border-white/10";
+                      
+                      if (action.completed) {
+                          statusText = "Completed";
+                          statusColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+                      } else if (isOverdue) {
+                          statusText = "Failed";
+                          statusColor = "text-red-400 bg-red-500/10 border-red-500/20";
+                      } else if (progressData) {
+                          // If we have data tracking, determine if 'On Track'
+                          const pct = (progressData.used / progressData.limit) * 100;
+                          if (pct > 100) {
+                              statusText = "Failed"; // Strict rule: > 100% = Failed
+                              statusColor = "text-red-400 bg-red-500/10 border-red-500/20";
+                          } else {
+                              statusText = "On Track";
+                              statusColor = "text-amber-400 bg-amber-500/10 border-amber-500/20";
+                          }
+                      }
+
+                      return (
+                        <div 
+                          key={aIdx} 
+                          className={`
+                            p-4 rounded-2xl border transition-all duration-300 relative group overflow-hidden
+                            ${action.completed ? "bg-emerald-900/10 border-emerald-500/30 opacity-75" : "bg-white/5 border-white/5 hover:border-violet-500/30 hover:bg-white/10"}
+                          `}
+                        >
+                          {/* Top Row: Title & Checkbox */}
+                          <div className="flex justify-between items-start mb-3">
+                            <h5 className={`font-semibold text-sm leading-snug pr-8 ${action.completed ? 'text-gray-400 line-through' : 'text-gray-200'}`}>
+                                {action.task}
+                            </h5>
+                            <button
+                              onClick={() => toggleTask(wIdx, aIdx)}
+                              className={`
+                                absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all
+                                ${action.completed ? "bg-emerald-500 border-emerald-500" : "border-white/30 hover:border-white"}
+                              `}
+                            >
+                              {action.completed && <CheckCircle className="w-4 h-4 text-black" />}
+                            </button>
+                          </div>
+
+                          {/* 📊 Dynamic Progress Bar (If applicable) */}
+                          {progressData && !action.completed && (
+                              <div className="mb-3">
+                                  <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                                      <span>Spent: ₹{progressData.used.toLocaleString()}</span>
+                                      <span>Limit: ₹{progressData.limit.toLocaleString()}</span>
+                                  </div>
+                                  <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
+                                      <div 
+                                        className={`h-full rounded-full ${progressData.used > progressData.limit ? "bg-red-500" : "bg-violet-500"}`}
+                                        style={{ width: `${Math.min(100, (progressData.used / progressData.limit) * 100)}%` }}
+                                      />
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* Footer: Status, Deadline, Why */}
+                          <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
+                             <div className="flex items-center gap-2">
+                                <span className={`text-[10px] px-2 py-0.5 rounded border ${statusColor} font-medium`}>
+                                    {statusText}
+                                </span>
+                                <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {action.deadline_day}{getOrdinal(action.deadline_day)}
+                                </span>
+                             </div>
+
+                             {/* 🧠 4. Why Panel Button */}
+                             <button
+                               onClick={() => explainWhy(action.task, action.id)}
+                               className="text-gray-500 hover:text-violet-400 transition-colors"
+                             >
+                               <HelpCircle className="w-4 h-4" />
+                             </button>
+                          </div>
+
+                          {/* Why Content Overlay */}
+                          {activeStepInfo === action.id && (
+                              <div className="absolute inset-0 bg-[#18181b] z-10 p-4 flex flex-col justify-center items-center text-center animate-in fade-in duration-200">
+                                  {whyLoading ? (
+                                      <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+                                  ) : (
+                                      <>
+                                        <p className="text-sm text-gray-300 italic mb-3">"{whyText}"</p>
+                                        <button 
+                                          onClick={() => setActiveStepInfo(null)}
+                                          className="text-xs text-violet-400 hover:underline"
+                                        >
+                                            Close
+                                        </button>
+                                      </>
+                                  )}
+                              </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------
+// 📊 MAIN COMPONENT: Dashboard
+// ------------------------------------------------------------------
 
 const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 🗓️ Month Selection State
@@ -122,10 +932,12 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     { name: "Other", icon: MoreHorizontal, color: "text-gray-400", bg: "bg-gray-400/10" }
   ];
 
+  // ✅ 1️⃣ Updated Transaction State with needType
   const [newTransaction, setNewTransaction] = useState({
     description: "",
     amount: "",
     category: "Food",
+    needType: "need", // Default to need
     transactionDate: new Date().toISOString().split("T")[0],
   });
 
@@ -287,18 +1099,18 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const emergencyTarget = monthData?.budgetPlan?.emergency || 0;
 
   // 🧠 Smart Allocation Logic (Re-grouping expenses)
-  // Needs: Food, Rent, Bills, Travel
+  // ✅ 4️⃣ & 6️⃣ Update Needs Calculation (Backward compatible)
   const needsUsed = useMemo(() => {
     const expenses = currentMonthRecords
-      .filter(r => ["Food", "Rent", "Bills", "Travel"].includes(r.category))
+      .filter(r => (r.needType || "need") === "need") // Defaults to 'need' if undefined
       .reduce((sum, r) => sum + (r.amount || 0), 0);
     return expenses + emi; // EMI is a fixed need
   }, [currentMonthRecords, emi]);
 
-  // Wants: Shopping, Entertainment, Other
+  // ✅ 5️⃣ Update Wants Calculation
   const wantsUsed = useMemo(() => {
     return currentMonthRecords
-      .filter(r => ["Shopping", "Entertainment", "Other"].includes(r.category))
+      .filter(r => r.needType === "want")
       .reduce((sum, r) => sum + (r.amount || 0), 0);
   }, [currentMonthRecords]);
 
@@ -526,7 +1338,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
           "scoreAfter": ${Math.max(0, dynamicScore - Math.round((price/income)*20))}, 
           "emergencyDelayDays": ${Math.round(price / (income/30 || 1))},
           "tradeoffs": ["Tradeoff 1 (e.g. 2 weeks of groceries)", "Tradeoff 2"],
-          "message": "A neutral, factual statement about the impact."
+          "message": "A neutral short , factual statement about the impact."
         }
       `;
 
@@ -641,11 +1453,13 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       const selectedDate = new Date(newTransaction.transactionDate + "T12:00:00");
       const createdAt = Timestamp.fromDate(selectedDate);
 
+      // ✅ 3️⃣ Save needType to Firestore
       await addDoc(collection(db, "users", user.uid, "financial_records"), {
         description: newTransaction.description,
         amount: parseFloat(newTransaction.amount),
         type: "expense", 
         category: newTransaction.category,
+        needType: newTransaction.needType, // Added needType
         createdAt,
       });
 
@@ -1031,7 +1845,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                       {/* Needs Row (Includes EMI) */}
                       <div className="md:col-span-2">
                          <AllocBar 
-                           label="Needs (Fixed + Food + Travel)" 
+                           label="Needs (Fixed + Essentials)" 
                            used={needsUsed} 
                            limit={needsLimit} 
                            type="needs"
@@ -1042,7 +1856,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                       {/* Wants Row */}
                       <div className="md:col-span-2">
                          <AllocBar 
-                           label="Wants (Shopping + Fun)" 
+                           label="Wants (Lifestyle)" 
                            used={wantsUsed} 
                            limit={wantsLimit} 
                            type="wants"
@@ -1245,7 +2059,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                     </div>
                   </div>
 
-                  {/* 6. Transactions List */}
+                  {/* 6. Transactions List with ✅ Badge */}
                   <div className="lg:col-span-12 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-all duration-500 shadow-xl">
                      <div className="flex items-center justify-between mb-6">
                       <h2 className="font-bold text-lg text-white">Recent Transactions</h2>
@@ -1273,7 +2087,17 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                               {getCategoryIcon(record.category)}
                               <div className="min-w-0">
                                 <p className="font-semibold text-sm text-white truncate pr-2">{record.description}</p>
-                                <p className="text-xs text-gray-500 mt-0.5">{record.category}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                   <p className="text-xs text-gray-500">{record.category}</p>
+                                   {/* ✅ 7️⃣ Need/Want Badge */}
+                                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+                                     (record.needType || "need") === "need" 
+                                       ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                                       : "bg-pink-500/10 text-pink-400 border-pink-500/20"
+                                   }`}>
+                                     {(record.needType || "need") === "need" ? "Need" : "Want"}
+                                   </span>
+                                </div>
                                 <p className="text-[10px] text-gray-600 mt-1 font-medium uppercase tracking-wide">{new Date(record.createdAt?.seconds * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</p>
                               </div>
                             </div>
@@ -1484,7 +2308,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         </div>
       )}
 
-      {/* Add Expense Modal */}
+      {/* Add Expense Modal with ✅ 2️⃣ Need/Want Selector */}
       {showTransactionForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
           <div className="bg-[#121215] border-t sm:border border-white/10 rounded-t-[2rem] sm:rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in slide-in-from-bottom duration-300 relative overflow-hidden">
@@ -1495,11 +2319,46 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
             </div>
             <div className="space-y-6">
               <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Title</label><input type="text" required className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none text-lg transition-all placeholder:text-gray-700 shadow-inner" placeholder="e.g. Starbucks" value={newTransaction.description} onChange={(e) => setNewTransaction({ ...newTransaction, description: e.target.value })} /></div>
-              <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Amount</label><div className="relative mt-2"><span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 text-xl font-light">₹</span><input type="number" required min="0" className="w-full p-4 pl-10 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none text-xl font-bold transition-all placeholder:text-gray-700 shadow-inner" placeholder="0.00" value={newTransaction.amount} onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })} /></div></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Date</label><input type="date" required className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all text-sm shadow-inner" value={newTransaction.transactionDate} onChange={(e) => setNewTransaction({ ...newTransaction, transactionDate: e.target.value })} /></div>
-                <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Category</label><div className="relative"><select className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none appearance-none transition-all text-sm shadow-inner" value={newTransaction.category} onChange={(e) => setNewTransaction({ ...newTransaction, category: e.target.value })}>{categories.map(c => <option key={c.name} value={c.name} className="bg-zinc-900">{c.name}</option>)}</select><ArrowDown className="absolute right-4 top-[60%] -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" /></div></div>
+              
+              <div>
+                 <label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Amount</label>
+                 <div className="relative mt-2">
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 text-xl font-light">₹</span>
+                    <input type="number" required min="0" className="w-full p-4 pl-10 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none text-xl font-bold transition-all placeholder:text-gray-700 shadow-inner" placeholder="0.00" value={newTransaction.amount} onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })} />
+                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Category Selector */}
+                <div>
+                   <label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Category</label>
+                   <div className="relative">
+                      <select className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none appearance-none transition-all text-sm shadow-inner" value={newTransaction.category} onChange={(e) => setNewTransaction({ ...newTransaction, category: e.target.value })}>
+                         {categories.map(c => <option key={c.name} value={c.name} className="bg-zinc-900">{c.name}</option>)}
+                      </select>
+                      <ArrowDown className="absolute right-4 top-[60%] -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                   </div>
+                </div>
+
+                {/* ✅ New Need/Want Selector */}
+                <div>
+                   <label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Type</label>
+                   <div className="relative">
+                      <select 
+                        value={newTransaction.needType}
+                        onChange={(e) => setNewTransaction({ ...newTransaction, needType: e.target.value })}
+                        className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none appearance-none transition-all text-sm shadow-inner"
+                      >
+                         <option value="need" className="bg-zinc-900">Need (Essential)</option>
+                         <option value="want" className="bg-zinc-900">Want (Lifestyle)</option>
+                      </select>
+                      <ArrowDown className="absolute right-4 top-[60%] -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                   </div>
+                </div>
+              </div>
+
+              <div><label className="text-xs text-gray-400 font-medium uppercase tracking-wider ml-1">Date</label><input type="date" required className="w-full mt-2 p-4 bg-black/40 border border-white/10 rounded-2xl text-white focus:border-violet-500 focus:bg-white/5 outline-none transition-all text-sm shadow-inner" value={newTransaction.transactionDate} onChange={(e) => setNewTransaction({ ...newTransaction, transactionDate: e.target.value })} /></div>
+              
               <button onClick={handleSaveTransaction} className="w-full py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg shadow-[0_4px_20px_-1px_rgba(139,92,246,0.5)] hover:shadow-[0_4px_25px_0px_rgba(139,92,246,0.6)] active:scale-[0.98] transition-all mt-4">Save Transaction</button>
             </div>
           </div>
