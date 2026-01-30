@@ -1,6 +1,7 @@
 import { Download } from "lucide-react";
 import  MonthlyReport  from "./MonthlyReport.jsx";
 import AIRoadmap from "./AIRoadmap";
+import CareerCoach from "./CareerCoach"; // 🆕 CAREER COACH IMPORT
 import React, { useEffect, useMemo, useState } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
@@ -65,7 +66,8 @@ import {
   ToggleRight,
   Info,
   Award,
-  DollarSign
+  DollarSign,
+  Briefcase // 🆕 CAREER COACH ICON
 } from "lucide-react";
 
 import {
@@ -334,6 +336,8 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const [checkingImpulse, setCheckingImpulse] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
   const [showInvestmentPlans, setShowInvestmentPlans] = useState(false); 
+  const [showCareerCoach, setShowCareerCoach] = useState(false); // 🆕 CAREER COACH STATE
+  const [careerProfile, setCareerProfile] = useState(null); // 🆕 CAREER PROFILE DATA
 
   // 🆕 Change 1: New State Variables for Quick Fill
   const [lastFilledMonthData, setLastFilledMonthData] = useState(null);
@@ -427,6 +431,20 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       }
     };
     
+    // 🆕 CAREER PROFILE FETCH
+    const fetchCareerProfile = async () => {
+      try {
+        const careerRef = doc(db, 'users', user.uid, 'career', 'profile');
+        const careerSnap = await getDoc(careerRef);
+        if (careerSnap.exists()) {
+          setCareerProfile(careerSnap.data());
+        }
+      } catch (error) {
+        console.error('Error fetching career profile:', error);
+      }
+    };
+    fetchCareerProfile();
+
     fetchFirstMonth();
   }, [user]);
 
@@ -1132,6 +1150,16 @@ const reportData = {
                  >
                    <Sparkles className="w-4 h-4" /> AI Roadmap
                  </button>
+
+                {/* 🆕 AI CAREER COACH BUTTON */}
+                {careerProfile && (
+                  <button 
+                    onClick={() => setShowCareerCoach(true)}
+                    className="hidden sm:flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition-all active:scale-95"
+                  >
+                    <Briefcase className="w-4 h-4" /> Career Coach
+                  </button>
+                )}
                </>
              )}
 
@@ -1378,6 +1406,47 @@ const reportData = {
 
                     </div>
                   </div>
+
+                  {/* 🆕 CAREER HEALTH WIDGET */}
+                  {careerProfile && (
+                    <div className="lg:col-span-4 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-6 relative group hover:border-amber-500/20 transition-all duration-500 shadow-xl">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl -z-10 group-hover:bg-amber-500/10 transition-colors" />
+                      
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="p-3 bg-amber-500/10 rounded-2xl border border-amber-500/20">
+                          <Briefcase className="w-6 h-6 text-amber-400" />
+                        </div>
+                        <div>
+                          <h2 className="font-bold text-lg text-white">Career Health</h2>
+                          <p className="text-xs text-gray-400">AI-powered insights</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center py-2 px-3 bg-white/5 rounded-lg">
+                          <span className="text-sm text-gray-400">Role:</span>
+                          <span className="text-sm font-semibold text-white">{careerProfile.jobTitle}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 px-3 bg-white/5 rounded-lg">
+                          <span className="text-sm text-gray-400">Industry:</span>
+                          <span className="text-sm font-semibold text-white">{careerProfile.industry}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 px-3 bg-white/5 rounded-lg">
+                          <span className="text-sm text-gray-400">Experience:</span>
+                          <span className="text-sm font-semibold text-white">{careerProfile.experience} yrs</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => setShowCareerCoach(true)}
+                        className="w-full mt-4 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-bold shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        View Career Analysis
+                      </button>
+                    </div>
+                  )}
+
 
                   {/* 🆕 3. Impulse Purchase Checker (New Card) */}
                   <div className="lg:col-span-12 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 hover:border-white/10 transition-all duration-500 shadow-xl">
@@ -1853,6 +1922,14 @@ const reportData = {
         onClose={() => setShowInvestmentPlans(false)}
         savings={monthData?.budgetPlan?.savings || 0}
       />
+
+       {/* 🆕 CAREER COACH MODAL */}
+       <CareerCoach
+         open={showCareerCoach}
+         onClose={() => setShowCareerCoach(false)}
+         userProfile={careerProfile}
+         monthData={monthData}
+       />
     </div>
   );
 };
