@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore, doc, writeBatch, getDoc, setDoc } from "firebase/firestore";
-import { IndianRupee, LogOut, Sparkles, Calendar, History, ArrowDown, Layers, Bug, Briefcase, GraduationCap } from 'lucide-react';
+import { IndianRupee, LogOut, Sparkles, Calendar, History, ArrowDown, Layers, Bug, Briefcase, GraduationCap, Clock, Heart } from 'lucide-react';
 
 // 🔥 FIREBASE INITIALIZATION (Inline for Stability)
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
@@ -19,14 +19,16 @@ export default function FinancialForm() {
     emi: ''
   });
   
-  // 🆕 Career Profile State
+  // 🆕 Career Profile State - UPDATED with workingHours and interests
   const [careerData, setCareerData] = useState({
     jobTitle: '',
     industry: 'IT',
     experience: '',
     primarySkills: '',
     learningHours: '',
-    willingToSwitch: true
+    willingToSwitch: true,
+    workingHours: '40', // NEW: Default 40 hours/week
+    interests: '' // NEW: User interests for side hustles
   });
   
   const [loading, setLoading] = useState(false);
@@ -179,7 +181,7 @@ export default function FinancialForm() {
     }
   };
 
-  // 🆕 Career Profile Submit
+  // 🆕 Career Form Submit Handler
   const handleCareerSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -192,96 +194,104 @@ export default function FinancialForm() {
         return;
       }
 
+      // Process skills array
+      const skillsArray = careerData.primarySkills
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+
       const careerProfile = {
-        ...careerData,
+        jobTitle: careerData.jobTitle,
+        industry: careerData.industry,
         experience: parseFloat(careerData.experience),
+        primarySkills: skillsArray,
         learningHours: parseFloat(careerData.learningHours || 0),
-        primarySkills: careerData.primarySkills.split(',').map(s => s.trim()).filter(Boolean),
-        currentSalary: parseFloat(formData.income || 0), // Link to financial data
-        createdAt: new Date().toISOString(),
+        willingToSwitch: careerData.willingToSwitch,
+        workingHours: parseFloat(careerData.workingHours || 40),
+        interests: careerData.interests,
+        currentSalary: parseFloat(formData.income || 0),
         updatedAt: new Date().toISOString()
       };
+
+      console.log("💼 Saving Career Profile:", careerProfile);
 
       const careerRef = doc(db, 'users', user.uid, 'career', 'profile');
       await setDoc(careerRef, careerProfile);
 
       setCareerProfileExists(true);
-      alert("Career profile saved successfully! ✨");
-
+      alert("Career profile saved successfully! 🎉");
+      
+      // Delay for UI effect
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
     } catch (error) {
       console.error("❌ Error saving career data:", error);
-      alert("Error saving career profile: " + error.message);
+      alert("Error saving career data: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // ⚡ Quick Fill Handlers
+  const handleLogout = () => {
+    auth.signOut();
+  };
+
+  // 🆕 Auto-fill Functions
   const fillIncome = () => {
-    if (prevMonthData?.income) setFormData(prev => ({ ...prev, income: prevMonthData.income }));
+    if (prevMonthData?.income) {
+      setFormData({ ...formData, income: prevMonthData.income });
+    }
   };
 
   const fillEmi = () => {
-    if (prevMonthData?.emi) setFormData(prev => ({ ...prev, emi: prevMonthData.emi }));
+    if (prevMonthData?.emi) {
+      setFormData({ ...formData, emi: prevMonthData.emi });
+    }
   };
 
   const fillBoth = () => {
     if (prevMonthData) {
-        setFormData({
-            income: prevMonthData.income || '',
-            emi: prevMonthData.emi || ''
-        });
+      setFormData({
+        income: prevMonthData.income || '',
+        emi: prevMonthData.emi || ''
+      });
     }
   };
 
-  // 🧪 DEBUG: Simulate Returning User
+  // 🧪 DEV SIMULATION TOGGLE
   const toggleSimulation = () => {
     if (prevMonthData) {
-      setPrevMonthData(null); 
-      setFormData({ income: '', emi: '' });
+      setPrevMonthData(null);
     } else {
-      setPrevMonthData({ income: '75000', emi: '12000' }); 
+      setPrevMonthData({
+        income: '50000',
+        emi: '10000',
+        expense: 25000,
+        budgetPlan: { savings: 8000, emergency: 4000 }
+      });
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center p-4 font-sans relative overflow-hidden">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40vw] h-[40vw] bg-violet-600/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40vw] h-[40vw] bg-fuchsia-600/10 rounded-full blur-[120px]" />
-      </div>
-
-      <div className="w-full max-w-lg bg-[#0f111a]/80 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/10 relative z-10">
-        <button 
-          onClick={() => auth.signOut()}
-          className="absolute top-6 right-6 text-gray-400 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-white/5"
-          title="Sign Out"
-        >
-          <LogOut className="w-5 h-5" />
-        </button>
-
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-violet-500/10 rounded-lg">
-              <Calendar className="w-6 h-6 text-violet-400" />
-            </div>
-            <h2 className="text-2xl font-bold text-white">Welcome {userName} 👋</h2>
-          </div>
-          <p className="text-gray-400">Let's set up your finances for <span className="text-white font-semibold">{currentMonthName}</span></p>
-          <div className="flex items-center gap-2 mt-2 text-xs text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full w-fit">
-            <Sparkles className="w-3 h-3" />
-            <span>AI Auto-Budgeting Active</span>
-          </div>
+    <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-black bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent mb-2">
+            Welcome back, {userName}!
+          </h1>
+          <p className="text-gray-500 text-sm">Setup your profile to get started</p>
         </div>
 
         {/* 🆕 Tab Navigation */}
-        <div className="flex gap-2 mb-6 p-1 bg-white/5 rounded-xl">
+        <div className="flex gap-2 mb-6 p-1 bg-black/40 rounded-xl border border-white/10">
           <button
             onClick={() => setActiveTab('financial')}
-            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-              activeTab === 'financial' 
-                ? 'bg-violet-600 text-white' 
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            className={`flex-1 py-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'financial'
+                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             <IndianRupee className="w-4 h-4" />
@@ -289,95 +299,108 @@ export default function FinancialForm() {
           </button>
           <button
             onClick={() => setActiveTab('career')}
-            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-              activeTab === 'career' 
-                ? 'bg-violet-600 text-white' 
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            className={`flex-1 py-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'career'
+                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             <Briefcase className="w-4 h-4" />
-            Career {careerProfileExists && <span className="w-2 h-2 bg-emerald-400 rounded-full"></span>}
+            Career
           </button>
         </div>
-        
-        {/* Financial Form */}
-        {activeTab === 'financial' && (
+
+        {/* Form Card */}
+        <div className="bg-gradient-to-br from-zinc-900/80 to-black/90 backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl">
+
+          {/* 📅 Month Badge */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
+              <Calendar className="w-4 h-4 text-violet-400" />
+              <span className="text-sm font-medium">{currentMonthName}</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors"
+              title="Logout"
+            >
+              <LogOut className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+
+          {/* 🆕 Financial Form */}
+          {activeTab === 'financial' && (
           <form onSubmit={handleSubmit} className="space-y-6">
-            
             <div className="space-y-4">
               <div className="group">
-                <label className="block text-sm font-medium text-gray-300 mb-2 ml-1">Monthly Salary</label>
-                <div className="relative">
-                  <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-violet-400 transition-colors" />
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    className="w-full pl-11 pr-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/5 transition-all"
-                    placeholder="e.g. 50000"
-                    value={formData.income}
-                    onChange={(e) => setFormData({ ...formData, income: e.target.value })}
-                  />
-                </div>
+                <label className="block text-sm font-medium text-gray-300 mb-2 ml-1">Monthly Income (₹)</label>
+                <input
+                  type="number"
+                  required
+                  className="w-full px-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/5 transition-all"
+                  placeholder="e.g. 50000"
+                  value={formData.income}
+                  onChange={(e) => setFormData({ ...formData, income: e.target.value })}
+                />
               </div>
 
               <div className="group">
-                <label className="block text-sm font-medium text-gray-300 mb-2 ml-1">Fixed EMI / Rent <span className="text-gray-500 text-xs">(Needs)</span></label>
-                <div className="relative">
-                  <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-violet-400 transition-colors" />
-                  <input
-                    type="number"
-                    min="0"
-                    className="w-full pl-11 pr-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/5 transition-all"
-                    placeholder="0"
-                    value={formData.emi}
-                    onChange={(e) => setFormData({ ...formData, emi: e.target.value })}
-                  />
-                </div>
+                <label className="block text-sm font-medium text-gray-300 mb-2 ml-1">
+                  EMI / Fixed Payments (₹) <span className="text-gray-600 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="number"
+                  className="w-full px-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/5 transition-all"
+                  placeholder="e.g. 10000"
+                  value={formData.emi}
+                  onChange={(e) => setFormData({ ...formData, emi: e.target.value })}
+                />
+                <p className="text-[10px] text-gray-600 mt-1.5 ml-1">Your budget will be based on income after EMI</p>
               </div>
             </div>
 
-            {/* ⚡ NEW: Previous Month Buttons */}
+            {/* 🔄 NEW: Auto-fill Section */}
             {!checkingHistory && prevMonthData && (
-              <div className="bg-white/5 border border-white/5 rounded-xl p-3 animate-in fade-in slide-in-from-right duration-300">
-                <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
-                  <History className="w-3 h-3 text-violet-400" />
-                  <span className="uppercase tracking-wider font-semibold">Quick Fill from Last Month</span>
+              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <History className="w-4 h-4 text-blue-400" />
+                  <p className="text-xs text-blue-300 font-medium">We found your previous data</p>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex gap-2">
-                      {prevMonthData.income && (
-                      <button 
-                          type="button"
-                          onClick={fillIncome}
-                          className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
-                      >
-                          <span>Income: ₹{prevMonthData.income}</span>
-                          <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
-                      </button>
-                      )}
-                      {prevMonthData.emi && parseFloat(prevMonthData.emi) > 0 && (
-                      <button 
-                          type="button"
-                          onClick={fillEmi}
-                          className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
-                      >
-                          <span>EMI: ₹{prevMonthData.emi}</span>
-                          <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
-                      </button>
-                      )}
+                <div className="space-y-2">
+                  {/* Individual Buttons */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {prevMonthData.income && (
+                    <button 
+                        type="button"
+                        onClick={fillIncome}
+                        className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
+                    >
+                        <span>Income: ₹{prevMonthData.income}</span>
+                        <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
+                    </button>
+                    )}
+                    {prevMonthData.emi && parseFloat(prevMonthData.emi) > 0 && (
+                    <button 
+                        type="button"
+                        onClick={fillEmi}
+                        className="flex-1 py-2 px-3 bg-black/40 hover:bg-violet-500/20 hover:border-violet-500/30 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all active:scale-95 group"
+                    >
+                        <span>EMI: ₹{prevMonthData.emi}</span>
+                        <ArrowDown className="w-3 h-3 text-gray-500 group-hover:text-violet-400" />
+                    </button>
+                    )}
                   </div>
                   
                   {/* Fill Both Button */}
                   {prevMonthData.income && prevMonthData.emi && parseFloat(prevMonthData.emi) > 0 && (
-                      <button 
-                          type="button"
-                          onClick={fillBoth}
-                          className="w-full py-2 px-3 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 rounded-lg text-xs text-violet-300 hover:text-violet-200 flex items-center justify-center gap-2 transition-all active:scale-95 font-medium"
-                      >
-                          <Layers className="w-3 h-3" />
-                          <span>Auto-Fill Everything</span>
-                      </button>
+                    <button 
+                        type="button"
+                        onClick={fillBoth}
+                        className="w-full py-2 px-3 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 rounded-lg text-xs text-violet-300 hover:text-violet-200 flex items-center justify-center gap-2 transition-all active:scale-95 font-medium"
+                    >
+                        <Layers className="w-3 h-3" />
+                        <span>Auto-Fill Everything</span>
+                    </button>
                   )}
                 </div>
               </div>
@@ -460,6 +483,41 @@ export default function FinancialForm() {
                 />
               </div>
 
+              {/* 🆕 Working Hours Field */}
+              <div className="group">
+                <label className="block text-sm font-medium text-gray-300 mb-2 ml-1 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-violet-400" />
+                  Working Hours/Week
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  max="168"
+                  className="w-full px-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/5 transition-all"
+                  placeholder="e.g. 40"
+                  value={careerData.workingHours}
+                  onChange={(e) => setCareerData({ ...careerData, workingHours: e.target.value })}
+                />
+                <p className="text-[10px] text-gray-600 mt-1.5 ml-1">Used to suggest side hustles that fit your schedule</p>
+              </div>
+
+              {/* 🆕 Interests Field */}
+              <div className="group">
+                <label className="block text-sm font-medium text-gray-300 mb-2 ml-1 flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-pink-400" />
+                  Interests & Hobbies
+                </label>
+                <textarea
+                  className="w-full px-4 py-3.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/5 transition-all resize-none"
+                  placeholder="e.g. Writing, Photography, Teaching, Gaming"
+                  rows="2"
+                  value={careerData.interests}
+                  onChange={(e) => setCareerData({ ...careerData, interests: e.target.value })}
+                />
+                <p className="text-[10px] text-gray-600 mt-1.5 ml-1">Helps AI suggest side hustles aligned with your passions</p>
+              </div>
+
               <div className="group">
                 <label className="block text-sm font-medium text-gray-300 mb-2 ml-1">Learning Hours/Week <span className="text-gray-500 text-xs">(optional)</span></label>
                 <input
@@ -526,6 +584,7 @@ export default function FinancialForm() {
         </button>
 
       </div>
+    </div>
     </div>
   );
 }

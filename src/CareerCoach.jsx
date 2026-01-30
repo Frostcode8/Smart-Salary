@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Briefcase, TrendingUp, Target, Loader2, Info, Sparkles, AlertTriangle, CheckCircle, BarChart3 } from 'lucide-react';
+import { X, Briefcase, TrendingUp, Target, Loader2, Info, Sparkles, AlertTriangle, CheckCircle, BarChart3, Edit2, Clock, Zap } from 'lucide-react';
 
-const GEMINI_API_KEY = "AIzaSyC33leGPAPDl7ol-oT1H7UtUsRJS8RAJCE";
+const GEMINI_API_KEY = "AIzaSyDdWCi1t1Q_fzkIw5Yo-IIAMD_PuyCpzC8";
 
-export default function CareerCoach({ open, onClose, userProfile, monthData }) {
+export default function CareerCoach({ income ,open, onClose, userProfile, monthData, onEditProfile }) {
   const [loading, setLoading] = useState(false);
   const [careerInsight, setCareerInsight] = useState(null);
   const [error, setError] = useState(null);
@@ -22,12 +22,17 @@ export default function CareerCoach({ open, onClose, userProfile, monthData }) {
       const currentYear = new Date().getFullYear();
       const salary = parseFloat(monthData?.income || userProfile.currentSalary || 0);
 
-      // 🔍 Step 1: Web Search for Real Market Data
-      const searchQuery = `${userProfile.jobTitle} average salary India ${currentYear}`;
-      
-      // 🧠 Step 2: AI Analysis with Gemini
+      // Calculate available hours for side hustle
+      const workingHours = parseFloat(userProfile.workingHours || 40);
+      const availableHours = Math.max(0, 168 - workingHours - 56); // Total hours - work - sleep(8h*7)
+
       const prompt = `
-You are a career intelligence AI. Analyze this professional profile and provide dual career insights.
+
+You are a career intelligence AI. Analyze this professional profile and provide dual career insights PLUS side hustle opportunities.
+IMPORTANT:
+All salary values must be MONTHLY.
+Do NOT return annual or CTC values.
+Return ranges in ₹ per month only.
 
 Profile:
 - Job Title: ${userProfile.jobTitle}
@@ -37,8 +42,13 @@ Profile:
 - Skills: ${userProfile.primarySkills?.join(', ') || 'Not specified'}
 - Learning Hours/Week: ${userProfile.learningHours || 0}
 - Willing to Switch Jobs: ${userProfile.willingToSwitch ? 'Yes' : 'No'}
+- Working Hours/Week: ${workingHours}
+- Available Hours/Week: ${availableHours}
+- Interests: ${userProfile.interests || 'Not specified'}
+- User monthly salary: ₹${income} (per month)
 
-Task: Provide a realistic career analysis using current ${currentYear} India job market data.
+
+Task: Provide a realistic career analysis using current ${currentYear} India job market data AND suggest practical side hustles.
 
 Return ONLY valid JSON (no markdown, no backticks):
 {
@@ -69,16 +79,28 @@ Return ONLY valid JSON (no markdown, no backticks):
       "actions": [<string array, max 2 strategic actions>]
     },
     "reasoning": "<brief explanation of growth path>"
-  }
+  },
+  "sideHustles": [
+    {
+      "title": "<side hustle name>",
+      "description": "<2-3 line description>",
+      "timeRequired": "<X hours/week>",
+      "potentialIncome": "<₹X,000 - ₹Y,000/month>",
+      "difficulty": "<Easy/Medium/Hard>",
+      "skills": [<string array, required skills>],
+      "platforms": [<string array, where to start>]
+    }
+  ]
 }
 
 Rules:
 1. Base salary data on real ${currentYear} India market rates
 2. Be realistic - don't over-promise
 3. Consider industry, experience, and current economic conditions
-4. Bottlenecks should be specific and actionable
-5. Salary ranges should be data-driven, not guesses
-6. Return ONLY the JSON object
+4. Side hustles should be practical and match user's skills/interests
+5. Suggest 3-5 side hustles that fit available hours (${availableHours} hours/week)
+6. Include both skill-building and income-generating hustles
+7. Return ONLY the JSON object
 `;
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
@@ -110,6 +132,12 @@ Rules:
     }
   };
 
+  const handleEdit = () => {
+    if (onEditProfile) {
+      onEditProfile();
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -123,12 +151,21 @@ Rules:
               <Briefcase className="w-5 h-5 text-violet-400" />
               AI Career Coach
             </h2>
-            <p className="text-xs text-gray-400 mt-1">Industry-realistic career analysis powered by AI</p>
+            <p className="text-xs text-gray-400 mt-1">Industry-realistic career analysis + side hustle opportunities</p>
           </div>
           
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <X className="w-6 h-6 text-gray-400" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleEdit}
+              className="p-2 hover:bg-violet-500/20 rounded-full transition-colors border border-violet-500/30"
+              title="Edit Career Profile"
+            >
+              <Edit2 className="w-5 h-5 text-violet-400" />
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <X className="w-6 h-6 text-gray-400" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -172,55 +209,41 @@ Rules:
                 </div>
               </div>
 
-              {/* Dual Insight Grid */}
-              <div className="grid md:grid-cols-2 gap-6">
+              {/* Main Analysis Grid */}
+              <div className="grid lg:grid-cols-2 gap-6">
                 
-                {/* LEFT: Current Reality */}
+                {/* LEFT: Current Position */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 mb-4">
-                    <BarChart3 className="w-5 h-5 text-blue-400" />
-                    <h3 className="text-lg font-bold text-white">Current Reality</h3>
+                    <BarChart3 className="w-5 h-5 text-violet-400" />
+                    <h3 className="text-lg font-bold text-white">Current Position</h3>
                   </div>
 
-                  {/* Career Health Score */}
-                  <div className="p-6 rounded-2xl bg-blue-500/10 border border-blue-500/20">
-                    <p className="text-sm text-blue-200 uppercase tracking-wider font-semibold mb-2 text-center">Career Health Score</p>
-                    <div className="flex items-center justify-center">
-                      <div className="relative">
-                        <svg className="w-32 h-32 transform -rotate-90">
-                          <circle cx="64" cy="64" r="56" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white/5" />
-                          <circle 
-                            cx="64" 
-                            cy="64" 
-                            r="56" 
-                            stroke="currentColor" 
-                            strokeWidth="8" 
-                            fill="transparent" 
-                            strokeDasharray={352} 
-                            strokeDashoffset={352 - (352 * careerInsight.current.healthScore) / 100} 
-                            className={`transition-all duration-1000 ${
-                              careerInsight.current.healthScore >= 70 ? "text-emerald-500" : 
-                              careerInsight.current.healthScore >= 40 ? "text-amber-500" : "text-red-500"
-                            }`}
-                            strokeLinecap="round" 
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className={`text-3xl font-bold ${
-                            careerInsight.current.healthScore >= 70 ? "text-emerald-400" : 
-                            careerInsight.current.healthScore >= 40 ? "text-amber-400" : "text-red-400"
-                          }`}>
-                            {careerInsight.current.healthScore}
-                          </span>
-                          <span className="text-xs text-gray-500">/ 100</span>
-                        </div>
-                      </div>
+                  {/* Health Score */}
+                  <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-900/30 to-blue-900/30 border border-violet-500/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-bold text-violet-200">Career Health Score</h4>
+                      <span className={`text-3xl font-black ${
+                        careerInsight.current.healthScore >= 80 ? 'text-emerald-400' :
+                        careerInsight.current.healthScore >= 60 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>
+                        {careerInsight.current.healthScore}/100
+                      </span>
+                    </div>
+                    <div className="w-full bg-black/40 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-1000 ${
+                          careerInsight.current.healthScore >= 80 ? 'bg-emerald-400' :
+                          careerInsight.current.healthScore >= 60 ? 'bg-yellow-400' : 'bg-red-400'
+                        }`}
+                        style={{ width: `${careerInsight.current.healthScore}%` }}
+                      />
                     </div>
                   </div>
 
                   {/* Market Position */}
                   <div className="p-5 rounded-2xl bg-white/5 border border-white/10">
-                    <h4 className="text-sm font-bold text-gray-300 mb-3">Market Position</h4>
+                    <h4 className="text-sm font-bold text-gray-200 mb-3">Market Position</h4>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-gray-400">Salary vs Market:</span>
@@ -367,6 +390,70 @@ Rules:
                 </div>
 
               </div>
+
+              {/* Side Hustles Section */}
+              {careerInsight.sideHustles && careerInsight.sideHustles.length > 0 && (
+                <div className="mt-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Zap className="w-5 h-5 text-amber-400" />
+                    <h3 className="text-lg font-bold text-white">Side Hustle Opportunities</h3>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Based on your {userProfile.workingHours || 40} hours/week work schedule, 
+                    you have approximately {Math.max(0, 168 - parseFloat(userProfile.workingHours || 40) - 56)} hours/week available for side projects
+                  </p>
+                  
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {careerInsight.sideHustles.map((hustle, idx) => (
+                      <div key={idx} className="p-5 rounded-2xl bg-gradient-to-br from-amber-900/20 to-orange-900/20 border border-amber-500/30 hover:border-amber-500/50 transition-all">
+                        <div className="flex items-start justify-between mb-3">
+                          <h4 className="text-base font-bold text-amber-200">{hustle.title}</h4>
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${
+                            hustle.difficulty === 'Easy' ? 'bg-emerald-500/20 text-emerald-300' :
+                            hustle.difficulty === 'Medium' ? 'bg-yellow-500/20 text-yellow-300' :
+                            'bg-red-500/20 text-red-300'
+                          }`}>
+                            {hustle.difficulty}
+                          </span>
+                        </div>
+                        
+                        <p className="text-xs text-gray-400 mb-3 leading-relaxed">{hustle.description}</p>
+                        
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            <span className="text-xs text-gray-300">{hustle.timeRequired}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="w-3 h-3 text-emerald-400" />
+                            <span className="text-xs text-emerald-400 font-semibold">{hustle.potentialIncome}</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-white/10">
+                          <p className="text-[10px] text-gray-500 mb-1">Required Skills:</p>
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {hustle.skills.map((skill, sidx) => (
+                              <span key={sidx} className="px-2 py-0.5 bg-white/5 rounded text-[10px] text-gray-400">
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                          
+                          <p className="text-[10px] text-gray-500 mb-1">Start Here:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {hustle.platforms.map((platform, pidx) => (
+                              <span key={pidx} className="px-2 py-0.5 bg-amber-500/10 rounded text-[10px] text-amber-300">
+                                {platform}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Disclaimer */}
               <div className="text-[10px] text-gray-600 text-center pt-4 pb-2 border-t border-white/5">

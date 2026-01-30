@@ -99,7 +99,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-const GEMINI_API_KEY = "AIzaSyCiR7T78CzwvmdFpuWEbbbPKiusgxON2n4 ";
+const GEMINI_API_KEY = "AIzaSyDdWCi1t1Q_fzkIw5Yo-IIAMD_PuyCpzC8";
 // ------------------------------------------------------------------
 // 🧩 COMPONENT: InvestmentPlans
 // ------------------------------------------------------------------
@@ -1924,7 +1924,7 @@ const reportData = {
       />
 
        {/* 🆕 CAREER COACH MODAL */}
-       <CareerCoach
+       <CareerCoach income={income} 
          open={showCareerCoach}
          onClose={() => setShowCareerCoach(false)}
          userProfile={careerProfile}
