@@ -1,19 +1,38 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   X, TrendingUp, Shield, DollarSign, PieChart, 
   ToggleLeft, ToggleRight, Info, Award
 } from "lucide-react";
 
-export default function InvestmentPlans({ open, onClose, income }) {
+export default function InvestmentPlans({ open, onClose, savings }) {
   const [showPersonalized, setShowPersonalized] = useState(true);
+
+  // Debug logging
+  useEffect(() => {
+    if (open) {
+      console.log("🔍 InvestmentPlans Debug:");
+      console.log("  - savings prop:", savings);
+      console.log("  - typeof savings:", typeof savings);
+      console.log("  - Number(savings):", Number(savings));
+      console.log("  - isNaN(savings):", isNaN(savings));
+    }
+  }, [open, savings]);
 
   if (!open) return null;
 
-  // 💰 Calculations for User-Centric Data
-  const monthlyInvestable = Math.round(income * 0.20); // 20% of income rule
+  // 💰 Calculations for User-Centric Data (Using Dynamic Savings from Budget Plan)
+  // Ensure savings is a valid number and default to 0 if not
+  const monthlyInvestable = Number(savings) || 0;
   const sipAmount = Math.round(monthlyInvestable * 0.60); // 60% of savings to Equity
   const safeAmount = Math.round(monthlyInvestable * 0.30); // 30% to Debt/PPF
   const goldAmount = Math.round(monthlyInvestable * 0.10); // 10% to Gold
+
+  console.log("💰 Calculated amounts:", {
+    monthlyInvestable,
+    sipAmount,
+    safeAmount,
+    goldAmount
+  });
 
   // 📄 Content Data
   const plans = [
@@ -60,7 +79,7 @@ export default function InvestmentPlans({ open, onClose, income }) {
               <PieChart className="w-5 h-5 text-violet-400" />
               Investment Strategy
             </h2>
-            <p className="text-xs text-gray-400 mt-1">Smart allocation based on financial best practices</p>
+            <p className="text-xs text-gray-400 mt-1">Smart allocation based on your financial profile</p>
           </div>
           
           <div className="flex items-center gap-4">
@@ -70,7 +89,7 @@ export default function InvestmentPlans({ open, onClose, income }) {
               className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-xs text-gray-300"
             >
               {showPersonalized ? <ToggleRight className="w-4 h-4 text-violet-400" /> : <ToggleLeft className="w-4 h-4 text-gray-500" />}
-              {showPersonalized ? "User Centric Mode" : "General Mode"}
+              {showPersonalized ? "Your Numbers" : "General Guide"}
             </button>
 
             <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
@@ -97,13 +116,19 @@ export default function InvestmentPlans({ open, onClose, income }) {
           <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-900/20 to-fuchsia-900/20 border border-violet-500/20 text-center">
             <p className="text-sm text-violet-200 uppercase tracking-wider font-semibold mb-2">Total Monthly Investment Potential</p>
             <h3 className="text-4xl font-bold text-white mb-2">
-              {showPersonalized ? `₹${monthlyInvestable.toLocaleString()}` : "20% of Salary"}
+              {showPersonalized ? `₹${monthlyInvestable.toLocaleString()}` : "Based on Your Budget"}
             </h3>
             <p className="text-xs text-gray-400 max-w-md mx-auto">
               {showPersonalized 
-                ? "Based on your income, this is the recommended amount to set aside for future growth." 
-                : "Financial experts recommend saving at least 20% of your income strictly for investments."}
+                ? "This amount is calculated from your dynamic budget plan, which adjusts based on your income level and EMI commitments." 
+                : "Your savings allocation is determined by a smart algorithm that considers your income bracket and fixed expenses."}
             </p>
+            
+            {/* Debug Info - Remove this in production */}
+            <div className="mt-4 text-[10px] text-gray-600 border-t border-white/5 pt-4">
+              <div>Debug: savings prop = {JSON.stringify(savings)}</div>
+              <div>Debug: monthlyInvestable = {monthlyInvestable}</div>
+            </div>
           </div>
 
           {/* Plan Cards */}
@@ -119,7 +144,7 @@ export default function InvestmentPlans({ open, onClose, income }) {
                 
                 <div className="mb-4">
                   <span className={`text-2xl font-bold ${plan.color}`}>
-                    {showPersonalized ? plan.userAmount : "Allocation Rule"}
+                    {showPersonalized ? plan.userAmount : "Smart Allocation"}
                   </span>
                 </div>
 
@@ -140,7 +165,7 @@ export default function InvestmentPlans({ open, onClose, income }) {
 
           {/* Disclaimer */}
           <div className="text-[10px] text-gray-600 text-center pt-8 pb-4">
-            Disclaimer: This is generated advice based on standard financial principles. 
+            Disclaimer: This is generated advice based on standard financial principles and your budget allocation. 
             Please consult a certified financial advisor before making actual investments.
           </div>
 

@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { db, auth } from './firebase.js'; 
-import { doc, writeBatch, getDoc } from 'firebase/firestore';
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore, doc, writeBatch, getDoc } from "firebase/firestore";
 import { IndianRupee, LogOut, Sparkles, Calendar, History, ArrowDown, Layers, Bug } from 'lucide-react';
+
+// 🔥 FIREBASE INITIALIZATION (Inline for Stability)
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const auth = getAuth(app);
+const db = getFirestore(app);
 
 export default function FinancialForm() {
   const [formData, setFormData] = useState({
     income: '',
     emi: ''
   });
-  const [isFirstSalary, setIsFirstSalary] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const [userName, setUserName] = useState('User');
 
@@ -23,7 +30,6 @@ export default function FinancialForm() {
   const prevDate = new Date();
   prevDate.setMonth(prevDate.getMonth() - 1);
   const prevMonthKey = prevDate.toISOString().slice(0, 7);
-  const prevMonthName = prevDate.toLocaleString('default', { month: 'long' });
 
   useEffect(() => {
     if (auth.currentUser?.displayName) {
@@ -55,22 +61,24 @@ export default function FinancialForm() {
   const toNum = (v) => parseFloat(v || 0);
 
   // 📊 2️⃣ Income-Based Smart Allocation (Dynamic Model)
-  const generateBudgetPlan = (income) => {
+  // ✅ UPDATED: Now generates plan based on NET INCOME (Disposable), not Gross
+  const generateBudgetPlan = (netIncome) => {
     let needsPct, wantsPct, savingsPct, emergencyPct;
 
-    if (income < 30000) {
+    // Adjusted brackets since we are dealing with post-EMI money
+    if (netIncome < 20000) {
       needsPct = 0.60; wantsPct = 0.15; savingsPct = 0.15; emergencyPct = 0.10;
-    } else if (income <= 70000) {
+    } else if (netIncome <= 50000) {
       needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.20; emergencyPct = 0.10;
     } else {
       needsPct = 0.40; wantsPct = 0.20; savingsPct = 0.30; emergencyPct = 0.10;
     }
 
-    const needs = Math.round(income * needsPct);
-    const wants = Math.round(income * wantsPct);
-    const savings = Math.round(income * savingsPct);
-    const emergency = Math.round(income * emergencyPct);
-    const investments = 0; // Keeping it simple for initial setup
+    const needs = Math.round(netIncome * needsPct);
+    const wants = Math.round(netIncome * wantsPct);
+    const savings = Math.round(netIncome * savingsPct);
+    const emergency = Math.round(netIncome * emergencyPct);
+    const investments = 0; 
 
     return { needs, wants, savings, emergency, investments };
   };
@@ -90,19 +98,39 @@ export default function FinancialForm() {
       const numIncome = toNum(formData.income);
       const numEmi = toNum(formData.emi);
 
-      const budgetPlan = generateBudgetPlan(numIncome);
+      // ✅ CHANGE 1: Calculate Net Income (Spendable)
+      const netIncome = Math.max(0, numIncome - numEmi);
 
+      // ✅ CHANGE 1: Generate Plan based on Net Income
+      const budgetPlan = generateBudgetPlan(netIncome);
+
+      // 💰 NEW: Calculate Accumulated Savings & Emergency Fund
+      let accumulatedSavings = budgetPlan.savings;
+      let accumulatedEmergency = budgetPlan.emergency;
+
+      // Check if previous month exists and has accumulated values
+      if (prevMonthData?.budgetPlan) {
+        const prevAccumSavings = prevMonthData.budgetPlan.accumulatedSavings || prevMonthData.budgetPlan.savings || 0;
+        const prevAccumEmergency = prevMonthData.budgetPlan.accumulatedEmergency || prevMonthData.budgetPlan.emergency || 0;
+        
+        accumulatedSavings = prevAccumSavings + budgetPlan.savings;
+        accumulatedEmergency = prevAccumEmergency + budgetPlan.emergency;
+      }
+
+      // Add accumulated values to budget plan
+      budgetPlan.accumulatedSavings = accumulatedSavings;
+      budgetPlan.accumulatedEmergency = accumulatedEmergency;
+
+      // ✅ CHANGE 2: Save netIncome to DB
       const dataToSave = {
         income: formData.income,
         emi: formData.emi || '0',
-        expense: 0, // Starts at 0
-        firstSalary: isFirstSalary,
-        score: 100, // Starts perfect
-        
+        netIncome: netIncome, // Store this for easier dashboard math
+        expense: 0, 
+        score: 100, 
         budgetPlan,
         spenderType: "Balanced",
         adviceText: "Plan created! Start tracking expenses to get live insights.",
-        
         updatedAt: new Date().toISOString()
       };
 
@@ -150,10 +178,10 @@ export default function FinancialForm() {
   // 🧪 DEBUG: Simulate Returning User
   const toggleSimulation = () => {
     if (prevMonthData) {
-      setPrevMonthData(null); // Switch to New User Mode
+      setPrevMonthData(null); 
       setFormData({ income: '', emi: '' });
     } else {
-      setPrevMonthData({ income: '75000', emi: '12000' }); // Switch to Returning User Mode
+      setPrevMonthData({ income: '75000', emi: '12000' }); 
     }
   };
 
@@ -189,30 +217,6 @@ export default function FinancialForm() {
         
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* ✅ CONDITIONALLY RENDER FIRST SALARY CHECKBOX 
-              Logic: If we have previous month data, HIDE this checkbox.
-          */}
-          {checkingHistory ? (
-             <div className="h-20 w-full bg-white/5 animate-pulse rounded-xl" />
-          ) : !prevMonthData ? (
-             <div className="bg-black/20 border border-white/10 rounded-xl p-4 flex items-center justify-between group hover:border-violet-500/30 transition-colors animate-in fade-in slide-in-from-left duration-300">
-                <div>
-                  <p className="font-semibold text-white">This is my first salary</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {isFirstSalary 
-                      ? "We'll be extra gentle with the plan" 
-                      : "Turn this on if you just started earning"}
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={isFirstSalary}
-                  onChange={() => setIsFirstSalary(!isFirstSalary)}
-                  className="w-6 h-6 accent-violet-500 cursor-pointer rounded bg-white/10 border-white/20"
-                />
-             </div>
-          ) : null}
-
           <div className="space-y-4">
             <div className="group">
               <label className="block text-sm font-medium text-gray-300 mb-2 ml-1">Monthly Salary</label>
@@ -246,9 +250,7 @@ export default function FinancialForm() {
             </div>
           </div>
 
-          {/* ⚡ NEW: Previous Month Buttons (Expanded) 
-              Logic: ONLY shows if we have data from the previous month.
-          */}
+          {/* ⚡ NEW: Previous Month Buttons */}
           {!checkingHistory && prevMonthData && (
             <div className="bg-white/5 border border-white/5 rounded-xl p-3 animate-in fade-in slide-in-from-right duration-300">
               <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
@@ -303,7 +305,7 @@ export default function FinancialForm() {
           </button>
         </form>
 
-        {/* 🧪 DEV BUTTON: Allows you to toggle between New User & Returning User views */}
+        {/* 🧪 DEV BUTTON */}
         <button 
           type="button" 
           onClick={toggleSimulation}

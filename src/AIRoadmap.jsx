@@ -1,13 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { 
   X, Sparkles, CheckCircle, HelpCircle, Loader2, 
-  Target, Shield, TrendingUp, RefreshCw, Lock, AlertTriangle, Calendar,
-  Trophy, Flame, Clock, Swords
+  Target, Clock, RefreshCw, Lock, Calendar
 } from "lucide-react";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
-import { db } from "./firebase.js";
+import { doc, getDoc, setDoc, updateDoc, getFirestore } from "firebase/firestore";
+import { initializeApp, getApps, getApp } from "firebase/app";
 
-const GEMINI_API_KEY = "AIzaSyAfiqB6IQz8R7Ftstjxc2EShKMs8vHU4dI";
+// 🔥 FIREBASE INITIALIZATION (Inline for Stability)
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const db = getFirestore(app);
+
+const GEMINI_API_KEY = "AIzaSyAkcobUKfXQ19lCZqifZiHlFnsVX2bPIok";
+
 
 // 🎨 Circular Progress Component
 const ProgressRing = ({ radius, stroke, progress, color }) => {
@@ -51,6 +56,13 @@ const ProgressRing = ({ radius, stroke, progress, color }) => {
   );
 };
 
+// Helper for date suffixes (1st, 2nd, 3rd)
+function getOrdinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
+
 export default function AIRoadmap({
   open,
   onClose,
@@ -61,16 +73,11 @@ export default function AIRoadmap({
 }) {
   const [loading, setLoading] = useState(false);
   const [roadmap, setRoadmap] = useState(null);
-  const [mode, setMode] = useState(null);
   const [whyText, setWhyText] = useState("");
   const [whyLoading, setWhyLoading] = useState(false);
   const [activeStepInfo, setActiveStepInfo] = useState(null);
-  const [verdict, setVerdict] = useState(null);
-  const [isRegenerating, setIsRegenerating] = useState(false); // New state for regeneration flow
+  const [isRegenerating, setIsRegenerating] = useState(false);
   
-  // 🎮 Difficulty State
-  const [difficulty, setDifficulty] = useState("Normal");
-
   // Safe data access
   const safeMonthData = monthData || {};
   const safeBudgetPlan = safeMonthData.budgetPlan || {};
@@ -80,13 +87,12 @@ export default function AIRoadmap({
   // -----------------------------
   const income = parseFloat(safeMonthData.income || 0);
   const emi = parseFloat(safeMonthData.emi || 0);
-  const score = safeMonthData.score || 0;
-  const isFirstSalary = safeMonthData.firstSalary === true;
   
-  const needsLimit = safeBudgetPlan.needs || 0;
+  // NET INCOME LOGIC
+  const netIncome = safeMonthData.netIncome || (income - emi);
+  
   const wantsLimit = safeBudgetPlan.wants || 0;
   const savingsTarget = safeBudgetPlan.savings || 0;
-  const emergencyTarget = safeBudgetPlan.emergency || 0;
 
   const currentMonthExpenses = useMemo(() => {
     if (!records) return [];
@@ -99,46 +105,51 @@ export default function AIRoadmap({
   }, [records, selectedMonthKey]);
 
   const needsUsed = useMemo(() => {
-    const expenses = currentMonthExpenses
-      .filter(r => ["Food", "Rent", "Bills", "Travel"].includes(r.category))
+    return currentMonthExpenses
+      .filter(r => (r.needType || "need") === "need")
       .reduce((sum, r) => sum + (r.amount || 0), 0);
-    return expenses + emi; 
-  }, [currentMonthExpenses, emi]);
+  }, [currentMonthExpenses]);
 
   const wantsUsed = useMemo(() => currentMonthExpenses
-    .filter(r => ["Shopping", "Entertainment", "Other"].includes(r.category))
+    .filter(r => r.needType === "want")
     .reduce((s, r) => s + r.amount, 0), [currentMonthExpenses]);
 
-  const shoppingTotal = useMemo(() => currentMonthExpenses
-    .filter(r => r.category === "Shopping")
-    .reduce((s, r) => s + r.amount, 0), [currentMonthExpenses]);
-
-  const totalExpense = useMemo(() => currentMonthExpenses
-    .reduce((sum, r) => sum + (r.amount || 0), 0), [currentMonthExpenses]);
-
-  const realSavings = income - needsUsed - wantsUsed;
+  const realSavings = netIncome - needsUsed - wantsUsed;
   const savingsGap = savingsTarget - realSavings;
   const impulseCount = safeMonthData.impulseHistory?.length || 0;
 
-  // ⏱️ Time Left Calculation (Fixed)
+  // 🎯 NEW: Category Analysis
+  const expenseByCategory = useMemo(() => {
+    const categoryMap = {};
+    currentMonthExpenses.forEach(r => {
+      const cat = r.category || "Other";
+      categoryMap[cat] = (categoryMap[cat] || 0) + r.amount;
+    });
+    return Object.entries(categoryMap)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [currentMonthExpenses]);
+
+  const biggestCategory = expenseByCategory[0] || { name: "General", value: 0 };
+  const wantsPercentage = wantsLimit > 0 ? (wantsUsed / wantsLimit * 100) : 0;
+
+  // ⏱️ Time Left Calculation
   const daysInMonth = useMemo(() => {
     const [year, month] = selectedMonthKey.split("-").map(Number);
     return new Date(year, month, 0).getDate();
   }, [selectedMonthKey]);
 
   const todayDate = new Date().getDate();
-  
-  // ✅ NEW LOGIC: Detect Past, Present, Future
   const currentMonthKey = new Date().toISOString().slice(0,7);
   const isCurrentMonth = selectedMonthKey === currentMonthKey;
-  const isPastMonth = selectedMonthKey < currentMonthKey;
   const isFutureMonth = selectedMonthKey > currentMonthKey;
+  const isPastMonth = selectedMonthKey < currentMonthKey;
 
   const daysLeft = isCurrentMonth
     ? Math.max(0, daysInMonth - todayDate)
     : isFutureMonth
-      ? daysInMonth // Future: Full month available
-      : 0;          // Past: Month ended
+      ? daysInMonth 
+      : 0;
 
   const monthProgress = Math.min(100, (todayDate / daysInMonth) * 100);
 
@@ -156,11 +167,7 @@ export default function AIRoadmap({
 
         if (snap.exists()) {
           const data = snap.data();
-          setMode(data.mode);
           setRoadmap(data.weekly_roadmap);
-          // Set difficulty if it exists in saved data, else default
-          if (data.difficulty) setDifficulty(data.difficulty);
-          if (data.verdict) setVerdict(data.verdict);
         } else {
           setRoadmap(null);
         }
@@ -175,64 +182,132 @@ export default function AIRoadmap({
   }, [open, selectedMonthKey, user, monthData]);
 
   // -----------------------------
-  // 🧠 AI GENERATION LOGIC
+  // 🧠 AI GENERATION LOGIC - ENHANCED
   // -----------------------------
   const generateRoadmap = async () => {
     setLoading(true);
     try {
+      // 🎯 Calculate weekly limits
+      const weeksLeft = Math.ceil(daysLeft / 7) || 4;
+      const wantsRemaining = Math.max(0, wantsLimit - wantsUsed);
+      const weeklyWantsLimit = Math.round(wantsRemaining / weeksLeft);
+      const weeklyCategoryLimit = Math.round(biggestCategory.value / 4);
+      const weeklySavingsTarget = Math.max(500, Math.round(Math.max(0, savingsGap) / weeksLeft)); // Minimum ₹500
+
+      // 🎯 Determine roadmap mode
+      let roadmapMode = "normal";
+      if (wantsPercentage >= 80) roadmapMode = "wants_rescue";
+      if (biggestCategory.value > netIncome * 0.4) roadmapMode = "category_control";
+      if (wantsPercentage >= 80 && biggestCategory.value > netIncome * 0.4) roadmapMode = "dual_rescue";
+
       const promptData = {
         MONTH: selectedMonthKey,
         INCOME: income,
-        SAVINGS_GAP: savingsGap,
-        SCORE: score,
-        FIRST_SALARY: isFirstSalary,
+        NET_INCOME: netIncome,
         WANTS_USED: wantsUsed,
         WANTS_LIMIT: wantsLimit,
+        WANTS_REMAINING: wantsRemaining,
+        WANTS_PERCENTAGE: Math.round(wantsPercentage),
+        WEEKLY_WANTS_LIMIT: weeklyWantsLimit,
+        BIGGEST_CATEGORY: biggestCategory.name,
+        BIGGEST_CATEGORY_AMOUNT: biggestCategory.value,
+        WEEKLY_CATEGORY_LIMIT: weeklyCategoryLimit,
+        SAVINGS_GAP: savingsGap,
+        WEEKLY_SAVINGS_TARGET: weeklySavingsTarget,
         IMPULSE_COUNT: impulseCount,
-        DIFFICULTY: difficulty // 🎮 Passing Difficulty to AI
+        DAYS_LEFT: daysLeft,
+        ROADMAP_MODE: roadmapMode
       };
 
       const prompt = `
-        Create a 4-week financial roadmap JSON for month ${selectedMonthKey}.
-        User Data: ${JSON.stringify(promptData)}
+You are a financial advisor creating a personalized 4-week spending roadmap.
 
-        STRICT RULES:
-        1. Mode Logic (Pick ONE):
-           - "Foundation Mode" (Blue) if first_salary=true or no history
-           - "Damage Control Mode" (Red) if savings < 0 or score < 40
-           - "Correction Mode" (Amber) if wants > limit
-           - "Discipline Mode" (Violet) if impulse > 3
-           - "Growth Mode" (Green) otherwise
-        
-        2. Difficulty Adjustment:
-           - "Easy": Fewer tasks (max 3/week), very lenient limits. Focus on quick wins.
-           - "Normal": Balanced (approx 4-5 tasks/week). Standard limits.
-           - "Hard": Stricter limits (cut wants by 20%), more tasks (6/week). Score impact should be 1.5x higher.
+USER DATA:
+${JSON.stringify(promptData, null, 2)}
 
-        3. Output Format (JSON ONLY):
+ROADMAP MODE: ${roadmapMode}
+
+INSTRUCTIONS BASED ON MODE:
+
+${roadmapMode === "wants_rescue" || roadmapMode === "dual_rescue" ? `
+🚨 WANTS BUDGET RESCUE MODE (User spent ${Math.round(wantsPercentage)}% of wants budget!)
+- Week 1: Alert user they've spent ₹${wantsUsed} of ₹${wantsLimit} (${Math.round(wantsPercentage)}%)
+- Week 2-4: Strict wants control - max ₹${weeklyWantsLimit}/week
+- Add specific tasks like "Skip online shopping", "Cancel subscriptions", "Use what you have"
+- Focus: Prevent overspending, stay within remaining ₹${wantsRemaining}
+` : ''}
+
+${roadmapMode === "category_control" || roadmapMode === "dual_rescue" ? `
+🎯 CATEGORY MONSTER SLAYER MODE (${biggestCategory.name} is ₹${biggestCategory.value}!)
+- Week 1: Track current ${biggestCategory.name} spending (₹${biggestCategory.value})
+- Week 2: Reduce ${biggestCategory.name} to ₹${Math.round(weeklyCategoryLimit * 0.9)}/week (10% cut)
+- Week 3: Target ₹${Math.round(weeklyCategoryLimit * 0.8)}/week (20% cut)
+- Week 4: Maintain ₹${Math.round(weeklyCategoryLimit * 0.75)}/week (25% cut)
+- Add specific ${biggestCategory.name} alternatives (e.g., if Food: cook at home, meal prep)
+` : ''}
+
+${roadmapMode === "normal" ? `
+📊 NORMAL MODE (Balanced approach)
+- Mix of spending control, savings, and habit building
+- Use category limits: ₹${weeklyCategoryLimit}/week for ${biggestCategory.name}
+- Wants budget: ₹${weeklyWantsLimit}/week
+- Savings target: ₹${weeklySavingsTarget}/week
+` : ''}
+
+STRICT RULES:
+1. EXACTLY 3 tasks per week
+2. Each task MUST have clear ₹ amounts from the data above (NEVER use ₹0)
+3. Use format "Spend ≤ ₹X in Category" for tracking tasks
+4. Week 1 Focus: Awareness & tracking
+5. Week 2-3 Focus: Active reduction & control  
+6. Week 4 Focus: Maintain habits (NOT generic celebration)
+7. Keep task descriptions under 12 words
+8. Be specific with rupee amounts, not percentages
+9. Make tasks actionable and measurable
+10. If weeklySavingsTarget is calculated as ₹0, use minimum ₹500 instead
+11. NEVER use phrases like "celebrate wins", "review month", "final push" without specific amounts
+
+TASK CATEGORIES (mix these):
+- Spending Control: "Spend ≤ ₹${weeklyWantsLimit} on wants this week"
+- Category Focus: "Spend ≤ ₹${weeklyCategoryLimit} in ${biggestCategory.name}"
+- Savings: "Save ₹${weeklySavingsTarget} toward monthly target"
+- Habits: "Track every expense", "No impulse buys for 7 days"
+- Week 4 specific: "Transfer ₹${weeklySavingsTarget} to savings account", "Reduce ${biggestCategory.name} by ₹${Math.round(weeklyCategoryLimit * 0.2)}"
+
+OUTPUT ONLY THIS JSON (no markdown, no explanation):
+
+{
+  "weekly_roadmap": [
+    {
+      "week": 1,
+      "focus": "string (e.g., 'Spending Awareness')",
+      "actions": [
         {
-          "mode": "String",
-          "weekly_roadmap": [
-            {
-              "week": 1,
-              "focus": "string",
-              "actions": [
-                {
-                  "id": "W1-A1",
-                  "task": "string (e.g. Spend ≤ ₹3000 in Food)",
-                  "deadline_day": 7,
-                  "success_condition": "string",
-                  "score_impact_if_completed": 5, // Scale this based on Difficulty
-                  "score_impact_if_ignored": -5,
-                  "completed": false
-                }
-              ]
-            }
-          ]
+          "id": "W1-A1",
+          "task": "string with specific ₹ amount",
+          "deadline_day": 7,
+          "completed": false
         }
-        
-        4. Task Format: Use EXACT phrase "Spend ≤ ₹X in CATEGORY" so I can parse it for progress bars.
-      `;
+      ]
+    }
+  ]
+}
+
+NEVER use these generic phrases in tasks:
+- "Save ₹0 this week"
+- "Final push - save ₹0"
+- "Review month - celebrate savings wins!"
+- "celebrate savings wins"
+- Generic "celebrate" tasks
+
+ALWAYS use:
+- Specific rupee amounts from user data
+- Actionable category names (Food, Transport, Shopping, etc.)
+- Measurable spending limits
+- Clear reduction targets
+
+Generate the roadmap now using the mode: ${roadmapMode}
+`;
 
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -253,17 +328,21 @@ export default function AIRoadmap({
         const ref = doc(db, "users", user.uid, "roadmaps", selectedMonthKey);
         await setDoc(ref, { 
           ...aiPlan, 
-          difficulty, // Save difficulty preference
-          createdAt: new Date().toISOString() 
+          createdAt: new Date().toISOString(),
+          mode: roadmapMode,
+          metadata: {
+            wantsPercentage: Math.round(wantsPercentage),
+            biggestCategory: biggestCategory.name,
+            biggestCategoryAmount: biggestCategory.value
+          }
         });
 
-        setMode(aiPlan.mode);
         setRoadmap(aiPlan.weekly_roadmap);
-        setIsRegenerating(false); // Reset regeneration state
+        setIsRegenerating(false);
       }
     } catch (error) {
       console.error("AI Gen Error", error);
-      alert("AI Generation failed.");
+      alert("AI Generation failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -282,70 +361,56 @@ export default function AIRoadmap({
     setActiveStepInfo(id);
     setWhyLoading(true);
     
-    // Quick tailored response based on mode
-    const text = mode === "Damage Control Mode" ? "Stops the bleeding immediately." : 
-                 mode === "Growth Mode" ? "Accelerates your wealth compounding." :
-                 "Builds the habit necessary for your next financial level.";
+    // Smart explanations based on task type
+    let explanation = "This task helps you build better money habits.";
     
-    // Simulate AI delay for trust
-    setTimeout(() => {
-        setWhyText(text);
-        setWhyLoading(false);
-    }, 800);
-  };
-
-  // -----------------------------
-  // 🎨 STYLING & PARSING
-  // -----------------------------
-  const getModeInfo = (m) => {
-    switch(m) {
-      case "Foundation Mode": return { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/50 shadow-[0_0_20px_-5px_rgba(59,130,246,0.3)]" };
-      case "Damage Control Mode": return { color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/50 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]" };
-      case "Correction Mode": return { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/50 shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)]" };
-      case "Discipline Mode": return { color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/50 shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]" };
-      case "Growth Mode": return { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/50 shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)]" };
-      default: return { color: "text-gray-400", bg: "bg-gray-800", border: "border-gray-700" };
+    if (task.includes("Spend ≤") && task.includes("wants")) {
+      explanation = `You've already spent ₹${wantsUsed} (${Math.round(wantsPercentage)}%) of your ₹${wantsLimit} wants budget. This limit prevents overspending.`;
+    } else if (task.includes(biggestCategory.name)) {
+      explanation = `${biggestCategory.name} is your biggest expense at ₹${biggestCategory.value}. Reducing it by 10-25% can save ₹${Math.round(biggestCategory.value * 0.15)}/month.`;
+    } else if (task.includes("Save")) {
+      explanation = `You need to save ₹${savingsGap} more to hit your target. Small weekly savings add up!`;
+    } else if (task.includes("impulse")) {
+      explanation = `You made ${impulseCount} impulse buys this month. Breaking this habit saves money and builds discipline.`;
     }
+    
+    setTimeout(() => {
+        setWhyText(explanation);
+        setWhyLoading(false);
+    }, 600);
   };
 
-  const modeStyle = getModeInfo(mode);
-
-  // 📊 Calculate Stats
   const totalTasks = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.length, 0) : 0;
   const completedTasks = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.filter(a => a.completed).length, 0) : 0;
   const progressPct = totalTasks ? (completedTasks / totalTasks) * 100 : 0;
-  
   const ringColor = progressPct > 70 ? "text-emerald-500" : progressPct > 40 ? "text-amber-500" : "text-red-500";
 
-  const potentialReward = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.reduce((s, a) => s + (a.score_impact_if_completed || 0), 0), 0) : 0;
-  const potentialPenalty = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.reduce((s, a) => s + (a.score_impact_if_ignored || 0), 0), 0) : 0;
-
-  // 🕵️ Parse "Spend <= X in Category" to get progress
+  // 🕵️ Enhanced Progress Tracking
   const getTaskProgress = (taskStr) => {
-    // Regex to find "Spend <= 3000 in Food" or similar
-    const match = taskStr.match(/Spend\s*(?:≤|<=)\s*[₹]?([\d,]+)\s*in\s*(\w+)/i);
-    if (match) {
-        const limit = parseFloat(match[1].replace(/,/g, ''));
-        const category = match[2];
+    // Match patterns like "Spend ≤ ₹X in Category" or "Spend ≤ ₹X on wants"
+    const categoryMatch = taskStr.match(/Spend\s*(?:≤|<=)\s*[₹]?([\d,]+)\s*(?:in|on)\s*(\w+)/i);
+    
+    if (categoryMatch) {
+        const limit = parseFloat(categoryMatch[1].replace(/,/g, ''));
+        const keyword = categoryMatch[2].toLowerCase();
         
-        // Calculate used for this category
-        const used = currentMonthExpenses
-            .filter(r => r.category.toLowerCase() === category.toLowerCase())
-            .reduce((s, r) => s + r.amount, 0);
-            
+        let used = 0;
+        let category = keyword;
+        
+        // Check if it's wants tracking
+        if (keyword === "wants" || keyword === "want") {
+            used = wantsUsed;
+            category = "wants";
+        } else {
+            // Try to find matching category
+            used = currentMonthExpenses
+                .filter(r => r.category.toLowerCase().includes(keyword))
+                .reduce((s, r) => s + r.amount, 0);
+        }
+        
         return { used, limit, category };
     }
     return null;
-  };
-
-  // 🎮 Difficulty Color Helper
-  const getDifficultyColor = (level) => {
-    switch (level) {
-      case "Easy": return "bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_-2px_rgba(16,185,129,0.3)]";
-      case "Normal": return "bg-blue-500/20 text-blue-400 border border-blue-500/50 shadow-[0_0_10px_-2px_rgba(59,130,246,0.3)]";
-      case "Hard": return "bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_10px_-2px_rgba(239,68,68,0.3)]";
-      default: return "";
-    }
   };
 
   if (!open) return null;
@@ -354,7 +419,7 @@ export default function AIRoadmap({
     <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
       <div className="bg-[#0f111a] border border-white/10 rounded-none sm:rounded-[2rem] w-full max-w-4xl h-full sm:h-[90vh] flex flex-col shadow-2xl relative overflow-hidden">
         
-        {/* 🎯 1. Header with Mode Badge */}
+        {/* Header */}
         <div className="p-6 border-b border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#121215]">
           <div className="flex items-center gap-4">
             <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors sm:hidden">
@@ -362,23 +427,32 @@ export default function AIRoadmap({
             </button>
             <div>
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                Monthly Roadmap
+                AI Roadmap
                 <span className="text-xs text-gray-500 font-normal bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
                     {selectedMonthKey}
                 </span>
               </h2>
-              {mode && !isRegenerating && (
-                <div className={`mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${modeStyle.bg} ${modeStyle.color} ${modeStyle.border} animate-[pulse_3s_infinite]`}>
-                  <Sparkles className="w-3 h-3" />
-                  Current Mode: {mode}
-                </div>
+              {/* Smart Status Badge */}
+              {roadmap && (
+                <p className="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                  {wantsPercentage >= 80 && (
+                    <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                      🚨 Wants Budget Alert
+                    </span>
+                  )}
+                  {biggestCategory.value > netIncome * 0.4 && (
+                    <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      ⚠️ High {biggestCategory.name} Spending
+                    </span>
+                  )}
+                </p>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
-             {/* 📊 2. Progress Ring - Only show if not regenerating */}
-             {!isRegenerating && (
+             {/* Progress Ring */}
+             {!isRegenerating && roadmap && (
                <div className="flex items-center gap-3">
                  <ProgressRing radius={28} stroke={4} progress={progressPct} color={ringColor} />
                  <div className="hidden sm:block">
@@ -389,7 +463,7 @@ export default function AIRoadmap({
              )}
              
              <div className="flex items-center gap-2">
-                {/* 🔄 Regenerate Button */}
+                {/* Regenerate Button */}
                 {roadmap && !isRegenerating && (
                   <button 
                     onClick={() => setIsRegenerating(true)} 
@@ -415,7 +489,7 @@ export default function AIRoadmap({
           </div>
         </div>
 
-        {/* ⏱️ 5. Time Left Bar (Updated Logic) */}
+        {/* Time Left Bar */}
         <div className="px-6 py-2 bg-black/40 border-b border-white/5 flex items-center gap-4">
             <span className="text-xs text-gray-400 flex items-center gap-1 min-w-fit">
                 <Clock className="w-3 h-3" /> 
@@ -433,24 +507,6 @@ export default function AIRoadmap({
             </div>
         </div>
 
-        {/* 🏆 6 & 7. Rewards & Consequences */}
-        {roadmap && !isRegenerating && (
-            <div className="grid grid-cols-2 border-b border-white/5">
-                <div className="p-3 text-center border-r border-white/5 bg-emerald-500/5">
-                    <p className="text-[10px] text-emerald-400 uppercase tracking-wider font-bold mb-1 flex items-center justify-center gap-1">
-                        <Trophy className="w-3 h-3" /> Reward Preview
-                    </p>
-                    <p className="text-xs text-gray-400">Complete all → <span className="text-white font-bold">+{potentialReward} Score</span></p>
-                </div>
-                <div className="p-3 text-center bg-red-500/5">
-                    <p className="text-[10px] text-red-400 uppercase tracking-wider font-bold mb-1 flex items-center justify-center gap-1">
-                        <Flame className="w-3 h-3" /> Failure Risk
-                    </p>
-                    <p className="text-xs text-gray-400">Miss 2 tasks → <span className="text-white font-bold">{potentialPenalty} Score</span></p>
-                </div>
-            </div>
-        )}
-
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin scrollbar-thumb-white/10 bg-[#0a0a0f]">
           {(!roadmap || isRegenerating) ? (
@@ -458,27 +514,39 @@ export default function AIRoadmap({
               <div className="w-20 h-20 bg-gradient-to-br from-violet-600/20 to-fuchsia-600/20 rounded-full flex items-center justify-center mb-6 animate-pulse ring-4 ring-violet-500/10">
                 <Target className="w-10 h-10 text-violet-400" />
               </div>
-              <h3 className="text-2xl font-bold text-white mb-2">{isRegenerating ? "Regenerate Roadmap" : "Analyze & Plan"}</h3>
-              <p className="text-gray-400 max-w-xs mb-6 text-sm">
-                AI is ready to analyze your {selectedMonthKey} spending and build a winning strategy.
+              <h3 className="text-2xl font-bold text-white mb-2">{isRegenerating ? "Regenerate Smart Roadmap" : "Generate Smart Roadmap"}</h3>
+              <p className="text-gray-400 max-w-md mb-4 text-sm">
+                AI will analyze your spending patterns and create a personalized plan.
               </p>
-
-              {/* 🎮 Difficulty Toggle */}
-              <div className="flex gap-2 mb-8 bg-black/40 p-1.5 rounded-xl border border-white/10 w-full max-w-xs shadow-inner">
-                {["Easy", "Normal", "Hard"].map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => setDifficulty(level)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                      difficulty === level
-                        ? getDifficultyColor(level)
-                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                    }`}
-                  >
-                    {level}
-                  </button>
-                ))}
+              
+              {/* Smart Preview */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 max-w-md mb-6 text-left">
+                <p className="text-xs text-gray-400 uppercase mb-2">Your Current Status</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">Wants Budget Used:</span>
+                    <span className={`text-sm font-bold ${wantsPercentage >= 80 ? 'text-red-400' : 'text-emerald-400'}`}>
+                      {Math.round(wantsPercentage)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">Biggest Category:</span>
+                    <span className="text-sm font-bold text-violet-400">{biggestCategory.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-300">Impulse Buys:</span>
+                    <span className={`text-sm font-bold ${impulseCount >= 5 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {impulseCount}
+                    </span>
+                  </div>
+                </div>
               </div>
+              
+              {isRegenerating && (
+                 <p className="text-xs text-amber-500/80 mb-6 max-w-xs border border-amber-500/20 bg-amber-500/10 p-2 rounded-lg">
+                    ⚠️ Generating a new roadmap will overwrite your existing progress for this month.
+                 </p>
+              )}
 
               <button
                 onClick={generateRoadmap}
@@ -486,16 +554,16 @@ export default function AIRoadmap({
                 className="px-8 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl font-bold text-white shadow-lg shadow-violet-500/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
               >
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                {loading ? "Analyzing..." : "Generate Roadmap"}
+                {loading ? "Analyzing Your Spending..." : isRegenerating ? "Confirm Regenerate" : "Generate Smart Roadmap"}
               </button>
             </div>
           ) : (
             <div className="space-y-8 pb-10">
-              {/* Difficulty Indicator in Header */}
-              <div className="flex justify-end mb-2">
-                 <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${getDifficultyColor(difficulty)}`}>
-                    {difficulty} Mode
-                 </span>
+              {/* Manual Regen Hint */}
+              <div className="flex justify-center mb-2">
+                 <p className="text-[10px] text-gray-500 flex items-center gap-1 bg-white/5 px-2 py-1 rounded-full">
+                    <Lock className="w-3 h-3" /> Roadmap locked. Regenerate only if needed.
+                 </p>
               </div>
 
               {roadmap.map((weekData, wIdx) => (
@@ -512,11 +580,10 @@ export default function AIRoadmap({
                     <h4 className="text-lg font-bold text-white">{weekData.focus}</h4>
                   </div>
 
-                  {/* 📋 3. Task Cards */}
+                  {/* Task Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {weekData.actions.map((action, aIdx) => {
                       const progressData = getTaskProgress(action.task);
-                      const isOverdue = !action.completed && todayDate > action.deadline_day;
                       
                       // Card Status Logic
                       let statusText = "Pending";
@@ -525,18 +592,17 @@ export default function AIRoadmap({
                       if (action.completed) {
                           statusText = "Completed";
                           statusColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
-                      } else if (isOverdue) {
-                          statusText = "Failed";
-                          statusColor = "text-red-400 bg-red-500/10 border-red-500/20";
                       } else if (progressData) {
-                          // If we have data tracking, determine if 'On Track'
                           const pct = (progressData.used / progressData.limit) * 100;
                           if (pct > 100) {
-                              statusText = "Failed"; // Strict rule: > 100% = Failed
+                              statusText = "Over Budget"; 
                               statusColor = "text-red-400 bg-red-500/10 border-red-500/20";
+                          } else if (pct > 80) {
+                              statusText = "Warning";
+                              statusColor = "text-amber-400 bg-amber-500/10 border-amber-500/20";
                           } else {
                               statusText = "On Track";
-                              statusColor = "text-amber-400 bg-amber-500/10 border-amber-500/20";
+                              statusColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
                           }
                       }
 
@@ -564,7 +630,7 @@ export default function AIRoadmap({
                             </button>
                           </div>
 
-                          {/* 📊 Dynamic Progress Bar (If applicable) */}
+                          {/* Dynamic Progress Bar */}
                           {progressData && !action.completed && (
                               <div className="mb-3">
                                   <div className="flex justify-between text-[10px] text-gray-400 mb-1">
@@ -573,7 +639,13 @@ export default function AIRoadmap({
                                   </div>
                                   <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
                                       <div 
-                                        className={`h-full rounded-full ${progressData.used > progressData.limit ? "bg-red-500" : "bg-violet-500"}`}
+                                        className={`h-full rounded-full transition-all ${
+                                          progressData.used > progressData.limit 
+                                            ? "bg-red-500" 
+                                            : progressData.used > progressData.limit * 0.8
+                                              ? "bg-amber-500"
+                                              : "bg-emerald-500"
+                                        }`}
                                         style={{ width: `${Math.min(100, (progressData.used / progressData.limit) * 100)}%` }}
                                       />
                                   </div>
@@ -592,7 +664,6 @@ export default function AIRoadmap({
                                 </span>
                              </div>
 
-                             {/* 🧠 4. Why Panel Button */}
                              <button
                                onClick={() => explainWhy(action.task, action.id)}
                                className="text-gray-500 hover:text-violet-400 transition-colors"
@@ -608,7 +679,7 @@ export default function AIRoadmap({
                                       <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
                                   ) : (
                                       <>
-                                        <p className="text-sm text-gray-300 italic mb-3">"{whyText}"</p>
+                                        <p className="text-xs text-gray-300 mb-3">{whyText}</p>
                                         <button 
                                           onClick={() => setActiveStepInfo(null)}
                                           className="text-xs text-violet-400 hover:underline"
@@ -631,11 +702,4 @@ export default function AIRoadmap({
       </div>
     </div>
   );
-}
-
-// Helper for date suffixes (1st, 2nd, 3rd)
-function getOrdinal(n) {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
 }

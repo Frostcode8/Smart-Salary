@@ -1,6 +1,11 @@
+import { Download } from "lucide-react";
+import  MonthlyReport  from "./MonthlyReport.jsx";
+import AIRoadmap from "./AIRoadmap";
 import React, { useEffect, useMemo, useState } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
+import html2pdf from "html2pdf.js";
+
 import {
   getFirestore,
   collection,
@@ -92,18 +97,17 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-const GEMINI_API_KEY = "AIzaSyAfiqB6IQz8R7Ftstjxc2EShKMs8vHU4dI";
-
+const GEMINI_API_KEY = "AIzaSyCiR7T78CzwvmdFpuWEbbbPKiusgxON2n4 ";
 // ------------------------------------------------------------------
 // 🧩 COMPONENT: InvestmentPlans
 // ------------------------------------------------------------------
-function InvestmentPlans({ open, onClose, income }) {
+function InvestmentPlans({ open, onClose, savings }) {
   const [showPersonalized, setShowPersonalized] = useState(true);
 
   if (!open) return null;
 
   // 💰 Calculations for User-Centric Data
-  const monthlyInvestable = Math.round(income * 0.20); // 20% of income rule
+  const monthlyInvestable = Number(savings) || 0; // Using dynamic savings from budget plan
   const sipAmount = Math.round(monthlyInvestable * 0.60); // 60% of savings to Equity
   const safeAmount = Math.round(monthlyInvestable * 0.30); // 30% to Debt/PPF
   const goldAmount = Math.round(monthlyInvestable * 0.10); // 10% to Gold
@@ -153,7 +157,7 @@ function InvestmentPlans({ open, onClose, income }) {
               <IconPieChart className="w-5 h-5 text-violet-400" />
               Investment Strategy
             </h2>
-            <p className="text-xs text-gray-400 mt-1">Smart allocation based on financial best practices</p>
+            <p className="text-xs text-gray-400 mt-1">Smart allocation based on your financial profile</p>
           </div>
           
           <div className="flex items-center gap-4">
@@ -163,7 +167,7 @@ function InvestmentPlans({ open, onClose, income }) {
               className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-xs text-gray-300"
             >
               {showPersonalized ? <ToggleRight className="w-4 h-4 text-violet-400" /> : <ToggleLeft className="w-4 h-4 text-gray-500" />}
-              {showPersonalized ? "User Centric Mode" : "General Mode"}
+              {showPersonalized ? "Your Numbers" : "General Guide"}
             </button>
 
             <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
@@ -190,12 +194,12 @@ function InvestmentPlans({ open, onClose, income }) {
           <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-900/20 to-fuchsia-900/20 border border-violet-500/20 text-center">
             <p className="text-sm text-violet-200 uppercase tracking-wider font-semibold mb-2">Total Monthly Investment Potential</p>
             <h3 className="text-4xl font-bold text-white mb-2">
-              {showPersonalized ? `₹${monthlyInvestable.toLocaleString()}` : "20% of Salary"}
+              {showPersonalized ? `₹${monthlyInvestable.toLocaleString()}` : "Based on Your Budget"}
             </h3>
             <p className="text-xs text-gray-400 max-w-md mx-auto">
               {showPersonalized 
-                ? "Based on your income, this is the recommended amount to set aside for future growth." 
-                : "Financial experts recommend saving at least 20% of your income strictly for investments."}
+                ? "This amount is calculated from your dynamic budget plan, which adjusts based on your income level and EMI commitments." 
+                : "Your savings allocation is determined by a smart algorithm that considers your income bracket and fixed expenses."}
             </p>
           </div>
 
@@ -296,587 +300,6 @@ function getOrdinal(n) {
   return s[(v - 20) % 10] || s[v] || s[0];
 }
 
-function AIRoadmap({
-  open,
-  onClose,
-  user,
-  monthData,
-  records,
-  selectedMonthKey
-}) {
-  const [loading, setLoading] = useState(false);
-  const [roadmap, setRoadmap] = useState(null);
-  const [mode, setMode] = useState(null);
-  const [whyText, setWhyText] = useState("");
-  const [whyLoading, setWhyLoading] = useState(false);
-  const [activeStepInfo, setActiveStepInfo] = useState(null);
-  const [verdict, setVerdict] = useState(null);
-  const [isRegenerating, setIsRegenerating] = useState(false); // New state for regeneration flow
-  
-  // 🎮 Difficulty State
-  const [difficulty, setDifficulty] = useState("Normal");
-
-  // Safe data access
-  const safeMonthData = monthData || {};
-  const safeBudgetPlan = safeMonthData.budgetPlan || {};
-
-  // -----------------------------
-  // 🧠 USER CONTEXT CALCULATIONS
-  // -----------------------------
-  const income = parseFloat(safeMonthData.income || 0);
-  const emi = parseFloat(safeMonthData.emi || 0);
-  const score = safeMonthData.score || 0;
-  const isFirstSalary = safeMonthData.firstSalary === true;
-  
-  const needsLimit = safeBudgetPlan.needs || 0;
-  const wantsLimit = safeBudgetPlan.wants || 0;
-  const savingsTarget = safeBudgetPlan.savings || 0;
-  const emergencyTarget = safeBudgetPlan.emergency || 0;
-
-  const currentMonthExpenses = useMemo(() => {
-    if (!records) return [];
-    return records.filter(r => {
-      const m = r.createdAt?.seconds
-        ? new Date(r.createdAt.seconds * 1000).toISOString().slice(0, 7)
-        : "";
-      return m === selectedMonthKey && r.type === "expense";
-    });
-  }, [records, selectedMonthKey]);
-
-  const needsUsed = useMemo(() => {
-    const expenses = currentMonthExpenses
-      .filter(r => (r.needType || "need") === "need")
-      .reduce((sum, r) => sum + (r.amount || 0), 0);
-    return expenses + emi; 
-  }, [currentMonthExpenses, emi]);
-
-  const wantsUsed = useMemo(() => currentMonthExpenses
-    .filter(r => r.needType === "want")
-    .reduce((s, r) => s + r.amount, 0), [currentMonthExpenses]);
-
-  const shoppingTotal = useMemo(() => currentMonthExpenses
-    .filter(r => r.category === "Shopping")
-    .reduce((s, r) => s + r.amount, 0), [currentMonthExpenses]);
-
-  const totalExpense = useMemo(() => currentMonthExpenses
-    .reduce((sum, r) => sum + (r.amount || 0), 0), [currentMonthExpenses]);
-
-  const realSavings = income - needsUsed - wantsUsed;
-  const savingsGap = savingsTarget - realSavings;
-  const impulseCount = safeMonthData.impulseHistory?.length || 0;
-
-  // ⏱️ Time Left Calculation (Fixed)
-  const daysInMonth = useMemo(() => {
-    const [year, month] = selectedMonthKey.split("-").map(Number);
-    return new Date(year, month, 0).getDate();
-  }, [selectedMonthKey]);
-
-  const todayDate = new Date().getDate();
-  
-  // ✅ NEW LOGIC: Detect Past, Present, Future
-  const currentMonthKey = new Date().toISOString().slice(0,7);
-  const isCurrentMonth = selectedMonthKey === currentMonthKey;
-  const isPastMonth = selectedMonthKey < currentMonthKey;
-  const isFutureMonth = selectedMonthKey > currentMonthKey;
-
-  const daysLeft = isCurrentMonth
-    ? Math.max(0, daysInMonth - todayDate)
-    : isFutureMonth
-      ? daysInMonth // Future: Full month available
-      : 0;          // Past: Month ended
-
-  const monthProgress = Math.min(100, (todayDate / daysInMonth) * 100);
-
-  // -----------------------------
-  // 📂 GENERATE OR LOAD ROADMAP
-  // -----------------------------
-  useEffect(() => {
-    if (!open || !monthData || !user) return;
-
-    const fetchRoadmap = async () => {
-      setLoading(true);
-      try {
-        const ref = doc(db, "users", user.uid, "roadmaps", selectedMonthKey);
-        const snap = await getDoc(ref);
-
-        if (snap.exists()) {
-          const data = snap.data();
-          setMode(data.mode);
-          setRoadmap(data.weekly_roadmap);
-          // Set difficulty if it exists in saved data, else default
-          if (data.difficulty) setDifficulty(data.difficulty);
-          if (data.verdict) setVerdict(data.verdict);
-        } else {
-          setRoadmap(null);
-        }
-      } catch (error) {
-        console.error("Error loading roadmap:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRoadmap();
-  }, [open, selectedMonthKey, user, monthData]);
-
-  // -----------------------------
-  // 🧠 AI GENERATION LOGIC
-  // -----------------------------
-  const generateRoadmap = async () => {
-    setLoading(true);
-    try {
-      const promptData = {
-        MONTH: selectedMonthKey,
-        INCOME: income,
-        SAVINGS_GAP: savingsGap,
-        SCORE: score,
-        FIRST_SALARY: isFirstSalary,
-        WANTS_USED: wantsUsed,
-        WANTS_LIMIT: wantsLimit,
-        IMPULSE_COUNT: impulseCount,
-        DIFFICULTY: difficulty // 🎮 Passing Difficulty to AI
-      };
-
-      const prompt = `
-        Create a 4-week financial roadmap JSON for month ${selectedMonthKey}.
-        User Data: ${JSON.stringify(promptData)}
-
-        STRICT RULES:
-        1. Mode Logic (Pick ONE):
-           - "Foundation Mode" (Blue) if first_salary=true or no history
-           - "Damage Control Mode" (Red) if savings < 0 or score < 40
-           - "Correction Mode" (Amber) if wants > limit
-           - "Discipline Mode" (Violet) if impulse > 3
-           - "Growth Mode" (Green) otherwise
-        
-        2. Difficulty Adjustment:
-           - "Easy": Fewer tasks (max 3/week), very lenient limits. Focus on quick wins.
-           - "Normal": Balanced (approx 4-5 tasks/week). Standard limits.
-           - "Hard": Stricter limits (cut wants by 20%), more tasks (6/week). Score impact should be 1.5x higher.
-
-        3. Output Format (JSON ONLY):
-        {
-          "mode": "String",
-          "weekly_roadmap": [
-            {
-              "week": 1,
-              "focus": "string",
-              "actions": [
-                {
-                  "id": "W1-A1",
-                  "task": "string (e.g. Spend ≤ ₹3000 in Food)",
-                  "deadline_day": 7,
-                  "success_condition": "string",
-                  "score_impact_if_completed": 5, // Scale this based on Difficulty
-                  "score_impact_if_ignored": -5,
-                  "completed": false
-                }
-              ]
-            }
-          ]
-        }
-        
-        4. Task Format: Use EXACT phrase "Spend ≤ ₹X in CATEGORY" so I can parse it for progress bars.
-      `;
-
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-        }
-      );
-
-      const data = await res.json();
-      let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      if (text) {
-        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-        const aiPlan = JSON.parse(text);
-
-        const ref = doc(db, "users", user.uid, "roadmaps", selectedMonthKey);
-        await setDoc(ref, { 
-          ...aiPlan, 
-          difficulty, // Save difficulty preference
-          createdAt: new Date().toISOString() 
-        });
-
-        setMode(aiPlan.mode);
-        setRoadmap(aiPlan.weekly_roadmap);
-        setIsRegenerating(false); // Reset regeneration state
-      }
-    } catch (error) {
-      console.error("AI Gen Error", error);
-      alert("AI Generation failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleTask = async (wIdx, aIdx) => {
-    if (!roadmap) return;
-    const newMap = [...roadmap];
-    newMap[wIdx].actions[aIdx].completed = !newMap[wIdx].actions[aIdx].completed;
-    setRoadmap(newMap);
-    await updateDoc(doc(db, "users", user.uid, "roadmaps", selectedMonthKey), { weekly_roadmap: newMap });
-  };
-
-  const explainWhy = async (task, id) => {
-    if (activeStepInfo === id) { setActiveStepInfo(null); return; }
-    setActiveStepInfo(id);
-    setWhyLoading(true);
-    
-    // Quick tailored response based on mode
-    const text = mode === "Damage Control Mode" ? "Stops the bleeding immediately." : 
-                 mode === "Growth Mode" ? "Accelerates your wealth compounding." :
-                 "Builds the habit necessary for your next financial level.";
-    
-    // Simulate AI delay for trust
-    setTimeout(() => {
-        setWhyText(text);
-        setWhyLoading(false);
-    }, 800);
-  };
-
-  // -----------------------------
-  // 🎨 STYLING & PARSING
-  // -----------------------------
-  const getModeInfo = (m) => {
-    switch(m) {
-      case "Foundation Mode": return { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/50 shadow-[0_0_20px_-5px_rgba(59,130,246,0.3)]" };
-      case "Damage Control Mode": return { color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/50 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]" };
-      case "Correction Mode": return { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/50 shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)]" };
-      case "Discipline Mode": return { color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/50 shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]" };
-      case "Growth Mode": return { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/50 shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)]" };
-      default: return { color: "text-gray-400", bg: "bg-gray-800", border: "border-gray-700" };
-    }
-  };
-
-  const modeStyle = getModeInfo(mode);
-
-  // 📊 Calculate Stats
-  const totalTasks = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.length, 0) : 0;
-  const completedTasks = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.filter(a => a.completed).length, 0) : 0;
-  const progressPct = totalTasks ? (completedTasks / totalTasks) * 100 : 0;
-  
-  const ringColor = progressPct > 70 ? "text-emerald-500" : progressPct > 40 ? "text-amber-500" : "text-red-500";
-
-  const potentialReward = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.reduce((s, a) => s + (a.score_impact_if_completed || 0), 0), 0) : 0;
-  const potentialPenalty = roadmap ? roadmap.reduce((acc, w) => acc + w.actions.reduce((s, a) => s + (a.score_impact_if_ignored || 0), 0), 0) : 0;
-
-  // 🕵️ Parse "Spend <= X in Category" to get progress
-  const getTaskProgress = (taskStr) => {
-    // Regex to find "Spend <= 3000 in Food" or similar
-    const match = taskStr.match(/Spend\s*(?:≤|<=)\s*[₹]?([\d,]+)\s*in\s*(\w+)/i);
-    if (match) {
-        const limit = parseFloat(match[1].replace(/,/g, ''));
-        const category = match[2];
-        
-        // Calculate used for this category
-        const used = currentMonthExpenses
-            .filter(r => r.category.toLowerCase() === category.toLowerCase())
-            .reduce((s, r) => s + r.amount, 0);
-            
-        return { used, limit, category };
-    }
-    return null;
-  };
-
-  // 🎮 Difficulty Color Helper
-  const getDifficultyColor = (level) => {
-    switch (level) {
-      case "Easy": return "bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_-2px_rgba(16,185,129,0.3)]";
-      case "Normal": return "bg-blue-500/20 text-blue-400 border border-blue-500/50 shadow-[0_0_10px_-2px_rgba(59,130,246,0.3)]";
-      case "Hard": return "bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_10px_-2px_rgba(239,68,68,0.3)]";
-      default: return "";
-    }
-  };
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
-      <div className="bg-[#0f111a] border border-white/10 rounded-none sm:rounded-[2rem] w-full max-w-4xl h-full sm:h-[90vh] flex flex-col shadow-2xl relative overflow-hidden">
-        
-        {/* 🎯 1. Header with Mode Badge */}
-        <div className="p-6 border-b border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#121215]">
-          <div className="flex items-center gap-4">
-            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors sm:hidden">
-                <X className="w-5 h-5 text-gray-400" />
-            </button>
-            <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                Monthly Roadmap
-                <span className="text-xs text-gray-500 font-normal bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                    {selectedMonthKey}
-                </span>
-              </h2>
-              {mode && !isRegenerating && (
-                <div className={`mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${modeStyle.bg} ${modeStyle.color} ${modeStyle.border} animate-[pulse_3s_infinite]`}>
-                  <Sparkles className="w-3 h-3" />
-                  Current Mode: {mode}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
-             {/* 📊 2. Progress Ring - Only show if not regenerating */}
-             {!isRegenerating && (
-               <div className="flex items-center gap-3">
-                 <ProgressRing radius={28} stroke={4} progress={progressPct} color={ringColor} />
-                 <div className="hidden sm:block">
-                   <p className="text-xs text-gray-400">Tasks Completed</p>
-                   <p className="text-sm font-bold text-white">{completedTasks} / {totalTasks}</p>
-                 </div>
-               </div>
-             )}
-             
-             <div className="flex items-center gap-2">
-                {/* 🔄 Regenerate Button */}
-                {roadmap && !isRegenerating && (
-                  <button 
-                    onClick={() => setIsRegenerating(true)} 
-                    className="p-2 hover:bg-white/10 rounded-full transition-colors text-violet-400 hover:text-violet-300"
-                    title="Regenerate Roadmap"
-                  >
-                    <RefreshCw className="w-5 h-5" />
-                  </button>
-                )}
-                {isRegenerating && (
-                  <button 
-                    onClick={() => setIsRegenerating(false)} 
-                    className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-gray-300"
-                    title="Cancel Regeneration"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                )}
-                <button onClick={onClose} className="hidden sm:block p-2 hover:bg-white/10 rounded-full transition-colors">
-                  <X className="w-6 h-6 text-gray-400" />
-                </button>
-             </div>
-          </div>
-        </div>
-
-        {/* ⏱️ 5. Time Left Bar (Updated Logic) */}
-        <div className="px-6 py-2 bg-black/40 border-b border-white/5 flex items-center gap-4">
-            <span className="text-xs text-gray-400 flex items-center gap-1 min-w-fit">
-                <Clock className="w-3 h-3" /> 
-                {daysLeft > 0 
-                  ? `${daysLeft} days ${isFutureMonth ? 'available' : 'left'}` 
-                  : isPastMonth 
-                    ? "Month Ended" 
-                    : "Last Day"}
-            </span>
-            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                <div 
-                    className={`h-full rounded-full transition-all duration-1000 ${daysLeft < 5 && !isFutureMonth ? "bg-red-500" : "bg-violet-500"}`} 
-                    style={{ width: `${isFutureMonth ? 100 : isCurrentMonth ? (100 - monthProgress) : 0}%` }} 
-                />
-            </div>
-        </div>
-
-        {/* 🏆 6 & 7. Rewards & Consequences */}
-        {roadmap && !isRegenerating && (
-            <div className="grid grid-cols-2 border-b border-white/5">
-                <div className="p-3 text-center border-r border-white/5 bg-emerald-500/5">
-                    <p className="text-[10px] text-emerald-400 uppercase tracking-wider font-bold mb-1 flex items-center justify-center gap-1">
-                        <Trophy className="w-3 h-3" /> Reward Preview
-                    </p>
-                    <p className="text-xs text-gray-400">Complete all → <span className="text-white font-bold">+{potentialReward} Score</span></p>
-                </div>
-                <div className="p-3 text-center bg-red-500/5">
-                    <p className="text-[10px] text-red-400 uppercase tracking-wider font-bold mb-1 flex items-center justify-center gap-1">
-                        <Flame className="w-3 h-3" /> Failure Risk
-                    </p>
-                    <p className="text-xs text-gray-400">Miss 2 tasks → <span className="text-white font-bold">{potentialPenalty} Score</span></p>
-                </div>
-            </div>
-        )}
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin scrollbar-thumb-white/10 bg-[#0a0a0f]">
-          {(!roadmap || isRegenerating) ? (
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="w-20 h-20 bg-gradient-to-br from-violet-600/20 to-fuchsia-600/20 rounded-full flex items-center justify-center mb-6 animate-pulse ring-4 ring-violet-500/10">
-                <Target className="w-10 h-10 text-violet-400" />
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-2">{isRegenerating ? "Regenerate Roadmap" : "Analyze & Plan"}</h3>
-              <p className="text-gray-400 max-w-xs mb-6 text-sm">
-                AI is ready to analyze your {selectedMonthKey} spending and build a winning strategy.
-              </p>
-
-              {/* 🎮 Difficulty Toggle */}
-              <div className="flex gap-2 mb-8 bg-black/40 p-1.5 rounded-xl border border-white/10 w-full max-w-xs shadow-inner">
-                {["Easy", "Normal", "Hard"].map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => setDifficulty(level)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                      difficulty === level
-                        ? getDifficultyColor(level)
-                        : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                    }`}
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                onClick={generateRoadmap}
-                disabled={loading}
-                className="px-8 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl font-bold text-white shadow-lg shadow-violet-500/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                {loading ? "Analyzing..." : "Generate Roadmap"}
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-8 pb-10">
-              {/* Difficulty Indicator in Header */}
-              <div className="flex justify-end mb-2">
-                 <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${getDifficultyColor(difficulty)}`}>
-                    {difficulty} Mode
-                 </span>
-              </div>
-
-              {roadmap.map((weekData, wIdx) => (
-                <div key={wIdx} className="relative pl-6 sm:pl-8 border-l border-white/10">
-                  <div className={`absolute -left-[14px] top-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border ${
-                      weekData.actions.every(a => a.completed) 
-                      ? "bg-emerald-500 border-emerald-400 text-black" 
-                      : "bg-[#18181b] border-white/20 text-gray-500"
-                  }`}>
-                    {weekData.actions.every(a => a.completed) ? <CheckCircle className="w-4 h-4" /> : `W${weekData.week}`}
-                  </div>
-                  
-                  <div className="mb-4">
-                    <h4 className="text-lg font-bold text-white">{weekData.focus}</h4>
-                  </div>
-
-                  {/* 📋 3. Task Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {weekData.actions.map((action, aIdx) => {
-                      const progressData = getTaskProgress(action.task);
-                      const isOverdue = !action.completed && todayDate > action.deadline_day;
-                      
-                      // Card Status Logic
-                      let statusText = "Pending";
-                      let statusColor = "text-gray-400 bg-white/5 border-white/10";
-                      
-                      if (action.completed) {
-                          statusText = "Completed";
-                          statusColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
-                      } else if (isOverdue) {
-                          statusText = "Failed";
-                          statusColor = "text-red-400 bg-red-500/10 border-red-500/20";
-                      } else if (progressData) {
-                          // If we have data tracking, determine if 'On Track'
-                          const pct = (progressData.used / progressData.limit) * 100;
-                          if (pct > 100) {
-                              statusText = "Failed"; // Strict rule: > 100% = Failed
-                              statusColor = "text-red-400 bg-red-500/10 border-red-500/20";
-                          } else {
-                              statusText = "On Track";
-                              statusColor = "text-amber-400 bg-amber-500/10 border-amber-500/20";
-                          }
-                      }
-
-                      return (
-                        <div 
-                          key={aIdx} 
-                          className={`
-                            p-4 rounded-2xl border transition-all duration-300 relative group overflow-hidden
-                            ${action.completed ? "bg-emerald-900/10 border-emerald-500/30 opacity-75" : "bg-white/5 border-white/5 hover:border-violet-500/30 hover:bg-white/10"}
-                          `}
-                        >
-                          {/* Top Row: Title & Checkbox */}
-                          <div className="flex justify-between items-start mb-3">
-                            <h5 className={`font-semibold text-sm leading-snug pr-8 ${action.completed ? 'text-gray-400 line-through' : 'text-gray-200'}`}>
-                                {action.task}
-                            </h5>
-                            <button
-                              onClick={() => toggleTask(wIdx, aIdx)}
-                              className={`
-                                absolute top-4 right-4 w-6 h-6 rounded-full border flex items-center justify-center transition-all
-                                ${action.completed ? "bg-emerald-500 border-emerald-500" : "border-white/30 hover:border-white"}
-                              `}
-                            >
-                              {action.completed && <CheckCircle className="w-4 h-4 text-black" />}
-                            </button>
-                          </div>
-
-                          {/* 📊 Dynamic Progress Bar (If applicable) */}
-                          {progressData && !action.completed && (
-                              <div className="mb-3">
-                                  <div className="flex justify-between text-[10px] text-gray-400 mb-1">
-                                      <span>Spent: ₹{progressData.used.toLocaleString()}</span>
-                                      <span>Limit: ₹{progressData.limit.toLocaleString()}</span>
-                                  </div>
-                                  <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
-                                      <div 
-                                        className={`h-full rounded-full ${progressData.used > progressData.limit ? "bg-red-500" : "bg-violet-500"}`}
-                                        style={{ width: `${Math.min(100, (progressData.used / progressData.limit) * 100)}%` }}
-                                      />
-                                  </div>
-                              </div>
-                          )}
-
-                          {/* Footer: Status, Deadline, Why */}
-                          <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
-                             <div className="flex items-center gap-2">
-                                <span className={`text-[10px] px-2 py-0.5 rounded border ${statusColor} font-medium`}>
-                                    {statusText}
-                                </span>
-                                <span className="text-[10px] text-gray-500 flex items-center gap-1">
-                                    <Calendar className="w-3 h-3" />
-                                    {action.deadline_day}{getOrdinal(action.deadline_day)}
-                                </span>
-                             </div>
-
-                             {/* 🧠 4. Why Panel Button */}
-                             <button
-                               onClick={() => explainWhy(action.task, action.id)}
-                               className="text-gray-500 hover:text-violet-400 transition-colors"
-                             >
-                               <HelpCircle className="w-4 h-4" />
-                             </button>
-                          </div>
-
-                          {/* Why Content Overlay */}
-                          {activeStepInfo === action.id && (
-                              <div className="absolute inset-0 bg-[#18181b] z-10 p-4 flex flex-col justify-center items-center text-center animate-in fade-in duration-200">
-                                  {whyLoading ? (
-                                      <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
-                                  ) : (
-                                      <>
-                                        <p className="text-sm text-gray-300 italic mb-3">"{whyText}"</p>
-                                        <button 
-                                          onClick={() => setActiveStepInfo(null)}
-                                          className="text-xs text-violet-400 hover:underline"
-                                        >
-                                            Close
-                                        </button>
-                                      </>
-                                  )}
-                              </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ------------------------------------------------------------------
 // 📊 MAIN COMPONENT: Dashboard
@@ -886,6 +309,15 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   // 🗓️ Month Selection State
   const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey);
   const [firstMonthKey, setFirstMonthKey] = useState(null);
+  const downloadReport = () => {
+  const element = document.getElementById("monthly-report-content");
+  if (!element) {
+    alert("Report not ready yet");
+    return;
+  }
+  html2pdf().from(element).save();
+};
+
   
   const [monthData, setMonthData] = useState(null); 
   const [loadingMonthData, setLoadingMonthData] = useState(true); 
@@ -901,7 +333,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const [generatingAI, setGeneratingAI] = useState(false); 
   const [checkingImpulse, setCheckingImpulse] = useState(false);
   const [showRoadmap, setShowRoadmap] = useState(false);
-  const [showInvestmentPlans, setShowInvestmentPlans] = useState(false); // ✅ Investment Modal State
+  const [showInvestmentPlans, setShowInvestmentPlans] = useState(false); 
 
   // 🆕 Change 1: New State Variables for Quick Fill
   const [lastFilledMonthData, setLastFilledMonthData] = useState(null);
@@ -1088,9 +520,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   }, [currentMonthRecords]);
 
   // Derived values from Month Data
-  const income = monthData ? parseFloat(monthData.income || 0) : 0;
-  const emi = monthData ? parseFloat(monthData.emi || 0) : 0;
-  const isFirstSalaryMode = monthData?.firstSalary === true;
+  const safeMonthData = monthData || {};
+  // ✅ STEP 1 — Get EMI & Net Income (User Request)
+  const income = Number(safeMonthData.income || 0);
+  const emi = Number(safeMonthData.emi || 0);
+  const netIncome = Number(safeMonthData.netIncome || (income - emi));
   
   // Budget Limits
   const needsLimit = monthData?.budgetPlan?.needs || 0;
@@ -1099,13 +533,12 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const emergencyTarget = monthData?.budgetPlan?.emergency || 0;
 
   // 🧠 Smart Allocation Logic (Re-grouping expenses)
-  // ✅ 4️⃣ & 6️⃣ Update Needs Calculation (Backward compatible)
+  // ✅ CHANGE 3: Update Needs Calculation (Do not add EMI again)
   const needsUsed = useMemo(() => {
-    const expenses = currentMonthRecords
+    return currentMonthRecords
       .filter(r => (r.needType || "need") === "need") // Defaults to 'need' if undefined
       .reduce((sum, r) => sum + (r.amount || 0), 0);
-    return expenses + emi; // EMI is a fixed need
-  }, [currentMonthRecords, emi]);
+  }, [currentMonthRecords]);
 
   // ✅ 5️⃣ Update Wants Calculation
   const wantsUsed = useMemo(() => {
@@ -1114,11 +547,18 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       .reduce((sum, r) => sum + (r.amount || 0), 0);
   }, [currentMonthRecords]);
 
-  // Real Savings = Income - All Outflows
-  const realSavings = income - needsUsed - wantsUsed;
+  // ✅ CHANGE 4: Real Savings = Net Income (Spendable) - Needs - Wants
+  const realSavings = netIncome - needsUsed - wantsUsed;
+  
+
   const savingsGap = savingsTarget - realSavings;
-  const availableForSpending = Math.max(0, income - emi);
-  const remainingSpendable = availableForSpending - totalActualExpense;
+  
+  // ✅ CHANGE 5: Available to Spend derived from Net Income
+  const availableToSpend = netIncome;
+  const remainingSpendable = availableToSpend - totalActualExpense;
+
+  // ✅ CHANGE 6: Emergency Fund Progress
+  const emergencyProgress = Math.min(realSavings, emergencyTarget);
   
   // 🧠 Dynamic Score Calculation (Enforcing Behavior)
   const dynamicScore = useMemo(() => {
@@ -1126,29 +566,26 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
 
     let score = 100;
     
-    // 🥉 FIRST SALARY MODE: Score penalties are softer
-    const penaltyMultiplier = isFirstSalaryMode ? 0.5 : 1; 
-
     // 1. Needs adherence (Over limit penalizes score)
     if (needsUsed > needsLimit) {
         const excessPercent = ((needsUsed - needsLimit) / (needsLimit || 1)) * 100;
-        score -= Math.min(30, excessPercent * 0.5 * penaltyMultiplier); 
+        score -= Math.min(30, excessPercent * 0.5); 
     }
 
     // 2. Wants adherence (Strict penalty)
     if (wantsUsed > wantsLimit) {
         const excessPercent = ((wantsUsed - wantsLimit) / (wantsLimit || 1)) * 100;
-        score -= Math.min(40, excessPercent * 1.0 * penaltyMultiplier); 
+        score -= Math.min(40, excessPercent * 1.0); 
     }
 
     // 3. Savings Gap (Penalty for missing target)
     if (realSavings < savingsTarget) {
         const gapPercent = ((savingsTarget - realSavings) / (income || 1)) * 100;
-        score -= Math.min(30, gapPercent * 1.5 * penaltyMultiplier); 
+        score -= Math.min(30, gapPercent * 1.5); 
     }
 
     return Math.max(0, Math.min(100, Math.round(score)));
-  }, [income, needsUsed, needsLimit, wantsUsed, wantsLimit, realSavings, savingsTarget, isFirstSalaryMode]);
+  }, [income, needsUsed, needsLimit, wantsUsed, wantsLimit, realSavings, savingsTarget]);
 
   // Update Score in DB
   useEffect(() => {
@@ -1162,34 +599,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     const safeDefault = { text: "Set up your plan to get started.", color: "text-gray-400", bg: "bg-gray-500/10", border: "border-gray-500/20" };
     if (!monthData) return safeDefault;
     
-    // 🥉 FIRST SALARY MODE: Gentler Alerts
-    if (isFirstSalaryMode) {
-        if (realSavings < 0) return {
-            text: "This month is for learning. Try reducing food spending next month to balance out.",
-            color: "text-orange-300",
-            bg: "bg-orange-500/10",
-            border: "border-orange-500/20"
-        };
-        if (wantsUsed > wantsLimit) return {
-            text: "It's okay to enjoy your first salary, but keep an eye on subscriptions.",
-            color: "text-blue-300",
-            bg: "bg-blue-500/10",
-            border: "border-blue-500/20"
-        };
-        if (dynamicScore >= 80) return {
-            text: "Fantastic start! You're managing your first salary like a pro.",
-            color: "text-emerald-400",
-            bg: "bg-emerald-500/10",
-            border: "border-emerald-500/20"
-        };
-        return { 
-            text: "First month is special. Observe where your money goes.", 
-            color: "text-violet-200", 
-            bg: "bg-white/5",
-            border: "border-white/10"
-        };
-    }
-
     // 🚨 NORMAL MODE: Strict Alerts
     if (realSavings < 0) return { 
       text: "Warning: You are spending more than you earn!", 
@@ -1215,7 +624,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       bg: "bg-white/5",
       border: "border-white/10"
     };
-  }, [realSavings, wantsUsed, wantsLimit, dynamicScore, monthData, isFirstSalaryMode]);
+  }, [realSavings, wantsUsed, wantsLimit, dynamicScore, monthData]);
 
   const expenseByCategory = useMemo(() => {
     const map = currentMonthRecords.reduce((acc, r) => {
@@ -1479,30 +888,33 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     try {
       const numIncome = parseFloat(setupFormData.income);
       const numEmi = parseFloat(setupFormData.emi) || 0;
+      
+      // ✅ CHANGE 1: Logic for Net Income
+      const netIncome = Math.max(0, numIncome - numEmi);
 
       // 📊 Income-Based Smart Allocation
       let needsPct, wantsPct, savingsPct, emergencyPct;
 
-      if (numIncome < 30000) {
+      if (netIncome < 20000) {
         needsPct = 0.60; wantsPct = 0.15; savingsPct = 0.15; emergencyPct = 0.10;
-      } else if (numIncome <= 70000) {
+      } else if (netIncome <= 50000) {
         needsPct = 0.50; wantsPct = 0.20; savingsPct = 0.20; emergencyPct = 0.10;
       } else {
         needsPct = 0.40; wantsPct = 0.20; savingsPct = 0.30; emergencyPct = 0.10;
       }
 
       const budgetPlan = {
-        needs: Math.round(numIncome * needsPct),
-        wants: Math.round(numIncome * wantsPct),
-        savings: Math.round(numIncome * savingsPct),
-        emergency: Math.round(numIncome * emergencyPct),
+        needs: Math.round(netIncome * needsPct),
+        wants: Math.round(netIncome * wantsPct),
+        savings: Math.round(netIncome * savingsPct),
+        emergency: Math.round(netIncome * emergencyPct),
         investments: 0 
       };
       
       const dataToSave = {
         income: setupFormData.income,
         emi: setupFormData.emi || '0',
-        // Change 4: Removed firstSalary: false logic
+        netIncome: netIncome, // ✅ CHANGE 2: Save netIncome
         score: 100, 
         budgetPlan,
         adviceText: "Plan created. Stick to your limits.",
@@ -1549,6 +961,8 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     );
   };
 
+  
+
   // 🌟 Smart Allocation Bar (Reactive)
   const AllocBar = ({ label, used, limit, type = "expense", note }) => {
     const safeLimit = limit || 1;
@@ -1569,7 +983,8 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         else { color = "bg-emerald-500"; }
     }
 
-    return (
+
+  return (
       <div className="mb-4">
         <div className="flex justify-between text-xs mb-1.5">
           <span className="text-gray-400 font-medium flex items-center gap-1">
@@ -1638,10 +1053,39 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     }
   };
 
+
+// 📄 Monthly Report Data
+const reportData = {
+  month: selectedMonthKey,
+  income,
+  emi,
+  netIncome,
+  budgetPlan: safeMonthData?.budgetPlan || {},
+  needsUsed,
+  wantsUsed,
+  realSavings,
+  records: currentMonthRecords,
+};
+
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white font-sans selection:bg-violet-500/30 pb-24 relative overflow-hidden">
       
       {monthData && <ParticleBackground score={dynamicScore} />}
+       {/* 🔴 HIDDEN REPORT COMPONENT FOR PDF GENERATION */}
+      {/* Fixed: Added specific width (794px ~ A4 width) and ensured it is not display:none but off-screen */}
+      {monthData && (
+        <div style={{ position: 'absolute', top: '-10000px', left: '-10000px', width: '794px' }}>
+          <MonthlyReport
+            id="monthly-report-content" // Pass ID for the PDF generator to find
+            monthData={monthData}
+            records={records}
+            userName={userName}
+            selectedMonthKey={selectedMonthKey}
+          />
+        </div>
+      )}
+
 
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-violet-600/10 rounded-full blur-[150px]" />
@@ -1657,11 +1101,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
             </h1>
             <p className="text-xs text-gray-400 mt-0.5">
               Financial health for <span className="text-violet-400 font-medium">{monthName}</span>
-              {isFirstSalaryMode && (
-                <span className="ml-2 inline-flex items-center gap-1 bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full text-[10px] border border-violet-500/20">
-                  <GraduationCap className="w-3 h-3" /> First Salary Mode
-                </span>
-              )}
+              {/* Removed First Salary Badge */}
             </p>
           </div>
 
@@ -1694,6 +1134,17 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                  </button>
                </>
              )}
+
+             {/* 🧠 AI Roadmap Button */}
+             {/* 📄 Monthly Report Button */}
+<button
+  onClick={downloadReport}
+  className="hidden sm:flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition-all active:scale-95"
+>
+  <Download className="w-4 h-4" /> Report
+</button>
+
+
 
              {/* Month Picker */}
              <div className="flex items-center bg-white/5 rounded-full border border-white/5 p-1 shadow-inner relative group">
@@ -1830,22 +1281,42 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                   {/* 2. Smart Allocation (Updated Logic) */}
                   <div className="lg:col-span-8 bg-[#0f111a]/60 backdrop-blur-md border border-white/5 rounded-3xl p-8 relative group hover:border-blue-500/20 transition-all duration-500 shadow-xl">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 group-hover:bg-blue-500/10 transition-colors" />
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                    
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                       <div className="flex items-center gap-3">
                         <div className="p-3 bg-blue-500/10 rounded-2xl border border-blue-500/20 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]"><Wallet className="w-6 h-6 text-blue-400" /></div>
-                        <div><h2 className="font-bold text-xl text-white">Smart Allocation</h2><p className="text-sm text-gray-400">Budget vs Reality</p></div>
+                        <div>
+                           <h2 className="font-bold text-xl text-white">Smart Allocation</h2>
+                           {/* ✅ STEP 3 - Header Update */}
+                           <p className="text-xs text-gray-400">
+                              Based on ₹{netIncome.toLocaleString()} after EMI
+                           </p>
+                        </div>
                       </div>
                       <div className="bg-blue-500/10 px-4 py-2 rounded-xl border border-blue-500/20 text-right">
                         <p className="text-xs text-gray-400 uppercase tracking-wider">Available to Spend</p>
-                        <p className="text-xl font-bold text-blue-300">₹{availableForSpending.toLocaleString()}</p>
+                        <p className="text-xl font-bold text-blue-300">₹{availableToSpend.toLocaleString()}</p>
                       </div>
+                    </div>
+
+                    {/* ✅ STEP 2 - Fixed Obligations Card */}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6 mt-4">
+                        <p className="text-sm text-gray-400 mb-1">Fixed Obligations (Auto Deducted)</p>
+                        <div className="flex justify-between text-white text-sm">
+                            <span>EMI / Rent</span>
+                            <span className="font-semibold">₹{emi.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-300 text-xs mt-2">
+                            <span>Net Spendable Income</span>
+                            <span>₹{netIncome.toLocaleString()}</span>
+                        </div>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
                       {/* Needs Row (Includes EMI) */}
                       <div className="md:col-span-2">
                          <AllocBar 
-                           label="Needs (Fixed + Essentials)" 
+                           label="Variable Needs (Food, Travel, Bills)" 
                            used={needsUsed} 
                            limit={needsLimit} 
                            type="needs"
@@ -1867,7 +1338,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                       {/* Savings Row with Gap Message */}
                       <div className="md:col-span-2">
                         <AllocBar 
-                          label="Real Savings" 
+                          label="Real Savings (After Spending)" 
                           used={realSavings} 
                           limit={savingsTarget} 
                           type="savings" 
@@ -1885,14 +1356,26 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                         </div>
                       </div>
                       
-                      {/* Emergency Fund (Optional tracking, keeping separate bar for visualization) */}
-                      <AllocBar 
-                        label="Emergency Fund Goal" 
-                        used={realSavings > savingsTarget ? realSavings - savingsTarget : 0} 
-                        limit={emergencyTarget} 
-                        type="savings" 
-                        note="Extra cushion"
-                      />
+                      {/* ✅ CHANGE 6: Emergency Fund (Updated Display) */}
+                      <div className="mb-4">
+                        <div className="flex justify-between text-xs mb-1.5">
+                          <span className="text-gray-400 font-medium flex items-center gap-1">
+                            Emergency Fund Progress
+                            <span className="text-[10px] text-gray-500 hidden sm:inline">(Extra cushion)</span>
+                          </span>
+                          <span className="font-semibold text-white">
+                            ₹{Math.max(0, emergencyProgress).toLocaleString()} 
+                            <span className="text-[10px] text-gray-500 ml-1"> / ₹{emergencyTarget.toLocaleString()}</span>
+                          </span>
+                        </div>
+                        <div className="w-full bg-white/5 rounded-full h-2.5 overflow-hidden border border-white/5">
+                          <div 
+                            className="h-full rounded-full bg-blue-500 shadow-[0_0_10px_-2px_rgba(59,130,246,0.5)] transition-all duration-1000 ease-out relative"
+                            style={{ width: `${Math.min(100, Math.max(0, (emergencyProgress / emergencyTarget) * 100))}%` }}
+                          />
+                        </div>
+                      </div>
+
                     </div>
                   </div>
 
@@ -2007,7 +1490,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
                          <span className={`text-xl font-bold ${remainingSpendable < 0 ? 'text-red-400' : 'text-emerald-400'}`}>₹{remainingSpendable.toLocaleString()}</span>
                       </div>
                       <div className="w-full bg-black/40 h-1.5 rounded-full overflow-hidden">
-                         <div className={`h-full rounded-full ${remainingSpendable < 0 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, Math.max(0, (remainingSpendable / availableForSpending) * 100))}%` }}></div>
+                         <div className={`h-full rounded-full ${remainingSpendable < 0 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, Math.max(0, (remainingSpendable / availableToSpend) * 100))}%` }}></div>
                       </div>
                     </div>
 
@@ -2247,17 +1730,6 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
         </div>
       )}
 
-      {/* 🆕 Impulse Check Modal (Replaced by on-dashboard card, removing this modal) */}
-      {showImpulseModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div className="bg-[#121215] border border-white/10 rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
-            {/* Logic Moved to Dashboard Card, kept here for mobile FAB support if needed, but primary UI is now the card */}
-             <button onClick={() => setShowImpulseModal(false)} className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
-             <div className="text-center text-gray-400">Please use the Impulse Checker card on the dashboard.</div>
-          </div>
-        </div>
-      )}
-
       {/* 🗓️ Calendar View Modal */}
       {showCalendarModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
@@ -2375,10 +1847,11 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
       />
 
        {/* 📈 Investment Plans Modal */}
+       
       <InvestmentPlans
         open={showInvestmentPlans}
         onClose={() => setShowInvestmentPlans(false)}
-        income={income}
+        savings={monthData?.budgetPlan?.savings || 0}
       />
     </div>
   );
