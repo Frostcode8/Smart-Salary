@@ -8,11 +8,21 @@ export default function CareerCoach({ income ,open, onClose, userProfile, monthD
   const [careerInsight, setCareerInsight] = useState(null);
   const [error, setError] = useState(null);
 
+  // ✅ FIX: Reset insight when userProfile changes OR when modal opens
   useEffect(() => {
-    if (open && userProfile && !careerInsight && !loading) {
-      generateCareerInsight();
+    if (open && userProfile) {
+      // Clear previous insight to force regeneration
+      setCareerInsight(null);
+      setError(null);
     }
   }, [open, userProfile]);
+
+  // ✅ FIX: Generate insight whenever we have userProfile but no insight
+  useEffect(() => {
+    if (open && userProfile && !careerInsight && !loading && !error) {
+      generateCareerInsight();
+    }
+  }, [open, userProfile, careerInsight, loading, error]);
 
   const generateCareerInsight = async () => {
     setLoading(true);
@@ -39,7 +49,7 @@ Profile:
 - Industry: ${userProfile.industry}
 - Experience: ${userProfile.experience} years
 - Current Salary: ₹${salary.toLocaleString()}/month
-- Skills: ${userProfile.primarySkills?.join(', ') || 'Not specified'}
+- Skills: ${userProfile.primarySkills?.join ? userProfile.primarySkills.join(', ') : userProfile.primarySkills || 'Not specified'}
 - Learning Hours/Week: ${userProfile.learningHours || 0}
 - Willing to Switch Jobs: ${userProfile.willingToSwitch ? 'Yes' : 'No'}
 - Working Hours/Week: ${workingHours}
@@ -169,141 +179,164 @@ Rules:
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-[#0a0a0f]">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
           
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-full">
-              <Loader2 className="w-12 h-12 animate-spin text-violet-500 mb-4" />
-              <p className="text-gray-400">Analyzing your career profile...</p>
-              <p className="text-xs text-gray-600 mt-2">Searching market data & generating insights</p>
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <Loader2 className="w-12 h-12 text-violet-400 animate-spin" />
+              <p className="text-gray-400 text-sm">Analyzing your career trajectory...</p>
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center h-full">
-              <AlertTriangle className="w-12 h-12 text-red-400 mb-4" />
-              <p className="text-red-300 mb-4">{error}</p>
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <AlertTriangle className="w-12 h-12 text-red-400" />
+              <p className="text-red-400 text-sm">{error}</p>
               <button 
                 onClick={generateCareerInsight}
-                className="px-6 py-2 bg-violet-600 hover:bg-violet-700 rounded-lg text-white transition-colors"
+                className="px-4 py-2 bg-violet-600 rounded-lg text-white text-sm hover:bg-violet-700 transition-colors"
               >
-                Try Again
+                Retry
               </button>
             </div>
           ) : careerInsight ? (
             <div className="space-y-6">
               
               {/* Profile Summary */}
-              <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-900/20 to-fuchsia-900/20 border border-violet-500/20">
-                <div className="grid md:grid-cols-3 gap-4 text-center">
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-violet-900/20 to-purple-900/20 border border-violet-500/30">
+                <div className="flex items-center gap-3 mb-3">
+                  <Briefcase className="w-5 h-5 text-violet-400" />
+                  <h3 className="text-base font-bold text-white">Your Profile</h3>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                   <div>
-                    <p className="text-xs text-violet-200 uppercase tracking-wider mb-1">Role</p>
-                    <p className="text-lg font-bold text-white">{userProfile.jobTitle}</p>
+                    <p className="text-gray-500">Role</p>
+                    <p className="text-gray-300 font-semibold">{userProfile.jobTitle}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-violet-200 uppercase tracking-wider mb-1">Industry</p>
-                    <p className="text-lg font-bold text-white">{userProfile.industry}</p>
+                    <p className="text-gray-500">Industry</p>
+                    <p className="text-gray-300 font-semibold">{userProfile.industry}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-violet-200 uppercase tracking-wider mb-1">Experience</p>
-                    <p className="text-lg font-bold text-white">{userProfile.experience} years</p>
+                    <p className="text-gray-500">Experience</p>
+                    <p className="text-gray-300 font-semibold">{userProfile.experience} years</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Working Hours</p>
+                    <p className="text-gray-300 font-semibold">{userProfile.workingHours || 40} hrs/week</p>
                   </div>
                 </div>
               </div>
 
-              {/* Main Analysis Grid */}
+              {/* Two-Column Layout */}
               <div className="grid lg:grid-cols-2 gap-6">
                 
-                {/* LEFT: Current Position */}
+                {/* LEFT: Current State */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 mb-4">
                     <BarChart3 className="w-5 h-5 text-violet-400" />
-                    <h3 className="text-lg font-bold text-white">Current Position</h3>
+                    <h3 className="text-lg font-bold text-white">Current State</h3>
                   </div>
 
                   {/* Health Score */}
-                  <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-900/30 to-blue-900/30 border border-violet-500/30">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-bold text-violet-200">Career Health Score</h4>
-                      <span className={`text-3xl font-black ${
-                        careerInsight.current.healthScore >= 80 ? 'text-emerald-400' :
-                        careerInsight.current.healthScore >= 60 ? 'text-yellow-400' : 'text-red-400'
-                      }`}>
-                        {careerInsight.current.healthScore}/100
-                      </span>
-                    </div>
-                    <div className="w-full bg-black/40 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-1000 ${
-                          careerInsight.current.healthScore >= 80 ? 'bg-emerald-400' :
-                          careerInsight.current.healthScore >= 60 ? 'bg-yellow-400' : 'bg-red-400'
-                        }`}
-                        style={{ width: `${careerInsight.current.healthScore}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Market Position */}
-                  <div className="p-5 rounded-2xl bg-white/5 border border-white/10">
-                    <h4 className="text-sm font-bold text-gray-200 mb-3">Market Position</h4>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-400">Salary vs Market:</span>
-                        <span className={`text-sm font-bold ${
-                          careerInsight.current.salaryGap >= 0 ? "text-emerald-400" : "text-red-400"
-                        }`}>
-                          {careerInsight.current.salaryGap >= 0 ? '+' : ''}{careerInsight.current.salaryGap}%
+                  <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-900/20 to-blue-900/20 border border-violet-500/30 relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-sm font-bold text-violet-300">Career Health Score</h4>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${careerInsight.current.healthScore >= 70 ? 'bg-emerald-400' : careerInsight.current.healthScore >= 50 ? 'bg-yellow-400' : 'bg-red-400'}`} />
+                        <span className="text-xs text-gray-400">
+                          {careerInsight.current.healthScore >= 70 ? 'Good' : careerInsight.current.healthScore >= 50 ? 'Average' : 'Needs Attention'}
                         </span>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-400">Percentile:</span>
-                        <span className="text-sm font-bold text-white">{careerInsight.current.positionPercentile}th</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-6">
+                      <div className="relative">
+                        <svg className="w-24 h-24 transform -rotate-90">
+                          <circle cx="48" cy="48" r="40" stroke="rgba(255,255,255,0.1)" strokeWidth="8" fill="none" />
+                          <circle 
+                            cx="48" 
+                            cy="48" 
+                            r="40" 
+                            stroke="currentColor" 
+                            strokeWidth="8" 
+                            fill="none"
+                            strokeDasharray={`${2 * Math.PI * 40}`}
+                            strokeDashoffset={`${2 * Math.PI * 40 * (1 - careerInsight.current.healthScore / 100)}`}
+                            className={careerInsight.current.healthScore >= 70 ? 'text-emerald-400' : careerInsight.current.healthScore >= 50 ? 'text-yellow-400' : 'text-red-400'}
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-2xl font-bold text-white">{careerInsight.current.healthScore}</span>
+                        </div>
                       </div>
-                      <div className="pt-2 border-t border-white/5">
-                        <p className="text-xs text-gray-400 mb-2">Market Range:</p>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">₹{(careerInsight.current.marketSalaryRange.min/1000).toFixed(0)}k</span>
-                          <span className="text-violet-400 font-bold">₹{(careerInsight.current.marketSalaryRange.median/1000).toFixed(0)}k</span>
-                          <span className="text-gray-500">₹{(careerInsight.current.marketSalaryRange.max/1000).toFixed(0)}k</span>
+                      
+                      <div className="flex-1">
+                        <div className="space-y-2 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">Percentile</span>
+                            <span className="text-white font-semibold">{careerInsight.current.positionPercentile}%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">Salary Gap</span>
+                            <span className={`font-semibold ${careerInsight.current.salaryGap >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {careerInsight.current.salaryGap >= 0 ? '+' : ''}{careerInsight.current.salaryGap}%
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Bottlenecks */}
-                  <div className="p-5 rounded-2xl bg-red-500/10 border border-red-500/20">
-                    <h4 className="text-sm font-bold text-red-300 mb-3 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4" />
-                      Career Bottlenecks
-                    </h4>
-                    <ul className="space-y-2">
-                      {careerInsight.current.bottlenecks.map((item, idx) => (
-                        <li key={idx} className="text-xs text-gray-300 flex items-start gap-2">
-                          <span className="text-red-400 mt-0.5">•</span>
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
+                  {/* Market Salary */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-900/20 to-cyan-900/20 border border-blue-500/30">
+                    <h4 className="text-sm font-bold text-blue-300 mb-3">Market Salary Range</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-400">Minimum</span>
+                        <span className="text-sm font-bold text-gray-300">₹{careerInsight.current.marketSalaryRange.min.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-400">Median</span>
+                        <span className="text-lg font-bold text-blue-400">₹{careerInsight.current.marketSalaryRange.median.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-400">Maximum</span>
+                        <span className="text-sm font-bold text-gray-300">₹{careerInsight.current.marketSalaryRange.max.toLocaleString()}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Strengths */}
-                  <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-                    <h4 className="text-sm font-bold text-emerald-300 mb-3 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Your Strengths
-                    </h4>
-                    <ul className="space-y-2">
-                      {careerInsight.current.strengths.map((item, idx) => (
-                        <li key={idx} className="text-xs text-gray-300 flex items-start gap-2">
-                          <span className="text-emerald-400 mt-0.5">✓</span>
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
+                  {/* Strengths & Bottlenecks */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-emerald-900/20 border border-emerald-500/30">
+                      <div className="flex items-center gap-2 mb-2">
+                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                        <h4 className="text-xs font-bold text-emerald-300">Strengths</h4>
+                      </div>
+                      <ul className="space-y-1.5">
+                        {careerInsight.current.strengths.map((strength, idx) => (
+                          <li key={idx} className="text-[11px] text-gray-300 leading-tight">{strength}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    <div className="p-4 rounded-xl bg-red-900/20 border border-red-500/30">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-4 h-4 text-red-400" />
+                        <h4 className="text-xs font-bold text-red-300">Bottlenecks</h4>
+                      </div>
+                      <ul className="space-y-1.5">
+                        {careerInsight.current.bottlenecks.map((bottleneck, idx) => (
+                          <li key={idx} className="text-[11px] text-gray-300 leading-tight">{bottleneck}</li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
 
                   {/* Reasoning */}
                   <div className="p-4 rounded-xl bg-white/5 border border-white/5">
                     <div className="flex items-start gap-2">
-                      <Info className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                      <Info className="w-4 h-4 text-violet-400 mt-0.5 shrink-0" />
                       <p className="text-xs text-gray-400 leading-relaxed">{careerInsight.current.reasoning}</p>
                     </div>
                   </div>

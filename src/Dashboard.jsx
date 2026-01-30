@@ -2,6 +2,7 @@ import { Download } from "lucide-react";
 import  MonthlyReport  from "./MonthlyReport.jsx";
 import AIRoadmap from "./AIRoadmap";
 import CareerCoach from "./CareerCoach"; // 🆕 CAREER COACH IMPORT
+import FinancialForm from "./FinancialForm"; // 🆕 FINANCIAL FORM IMPORT FOR MODAL
 import React, { useEffect, useMemo, useState } from "react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
@@ -338,6 +339,7 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
   const [showInvestmentPlans, setShowInvestmentPlans] = useState(false); 
   const [showCareerCoach, setShowCareerCoach] = useState(false); // 🆕 CAREER COACH STATE
   const [careerProfile, setCareerProfile] = useState(null); // 🆕 CAREER PROFILE DATA
+  const [showEditProfile, setShowEditProfile] = useState(false); // 🆕 EDIT PROFILE MODAL STATE
 
   // 🆕 Change 1: New State Variables for Quick Fill
   const [lastFilledMonthData, setLastFilledMonthData] = useState(null);
@@ -353,6 +355,18 @@ const Dashboard = ({ user, onLogout, currentMonthKey: initialMonthKey }) => {
     emi: ''
   });
   const [setupLoading, setSetupLoading] = useState(false);
+
+  // 🆕 Handler for editing career profile from Career Coach
+  const handleEditCareerProfile = () => {
+    setShowCareerCoach(false);
+    setShowEditProfile(true);
+  };
+
+  // 🆕 Handler for when profile is updated
+  const handleProfileUpdate = (updatedProfile) => {
+    setCareerProfile(updatedProfile);
+    setShowEditProfile(false);
+  };
 
   // Format the selected month name
   const monthName = new Date(selectedMonthKey + "-01").toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -1929,7 +1943,18 @@ const reportData = {
          onClose={() => setShowCareerCoach(false)}
          userProfile={careerProfile}
          monthData={monthData}
+         onEditProfile={handleEditCareerProfile}
        />
+
+       {/* 🆕 EDIT PROFILE MODAL */}
+       {showEditProfile && (
+         <FinancialForm 
+           isModal={true}
+           initialTab="career"
+           onClose={() => setShowEditProfile(false)}
+           onUpdate={handleProfileUpdate}
+         />
+       )}
     </div>
   );
 };

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore, doc, writeBatch, getDoc, setDoc } from "firebase/firestore";
-import { IndianRupee, LogOut, Sparkles, Calendar, History, ArrowDown, Layers, Bug, Briefcase, GraduationCap, Clock, Heart } from 'lucide-react';
+import { IndianRupee, LogOut, Sparkles, Calendar, History, ArrowDown, Layers, Bug, Briefcase, GraduationCap, Clock, Heart, X } from 'lucide-react';
 
 // 🔥 FIREBASE INITIALIZATION (Inline for Stability)
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
@@ -10,9 +10,14 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-export default function FinancialForm() {
-  // 🆕 Tab State
-  const [activeTab, setActiveTab] = useState('financial'); // 'financial' or 'career'
+export default function FinancialForm({ isModal = false, initialTab = 'financial', onClose, onUpdate }) {
+  // 🆕 Tab State - Can be set via prop
+  const [activeTab, setActiveTab] = useState(initialTab);
+  
+  // Update activeTab when initialTab prop changes
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
   
   const [formData, setFormData] = useState({
     income: '',
@@ -224,6 +229,16 @@ export default function FinancialForm() {
       // Delay for UI effect
       await new Promise(resolve => setTimeout(resolve, 500));
       
+      // Call onUpdate callback if provided (for modal usage)
+      if (onUpdate) {
+        onUpdate(careerProfile);
+      }
+
+      // Close modal if this is a modal
+      if (isModal && onClose) {
+        onClose();
+      }
+      
     } catch (error) {
       console.error("❌ Error saving career data:", error);
       alert("Error saving career data: " + error.message);
@@ -272,17 +287,41 @@ export default function FinancialForm() {
     }
   };
 
+  // Wrapper class - modal or full page
+  const containerClass = isModal 
+    ? "fixed inset-0 z-[80] bg-black/90 backdrop-blur-xl flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300"
+    : "min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center p-4";
+
+  const contentClass = isModal
+    ? "bg-[#0f111a] border border-white/10 rounded-none sm:rounded-[2rem] w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+    : "w-full max-w-md";
+
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className={containerClass}>
+      <div className={contentClass}>
         
-        {/* Header */}
+        {/* Modal Header (only if modal) */}
+        {isModal && onClose && (
+          <div className="p-4 border-b border-white/5 flex justify-between items-center bg-[#121215]">
+            <h2 className="text-lg font-bold text-white">Update Profile</h2>
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <X className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+        )}
+
+        {/* Scrollable Content */}
+        <div className={isModal ? "flex-1 overflow-y-auto p-6" : ""}>
+        
+        {/* Header (non-modal only) */}
+        {!isModal && (
         <div className="text-center mb-8">
           <h1 className="text-3xl font-black bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent mb-2">
             Welcome back, {userName}!
           </h1>
           <p className="text-gray-500 text-sm">Setup your profile to get started</p>
         </div>
+        )}
 
         {/* 🆕 Tab Navigation */}
         <div className="flex gap-2 mb-6 p-1 bg-black/40 rounded-xl border border-white/10">
@@ -313,7 +352,8 @@ export default function FinancialForm() {
         {/* Form Card */}
         <div className="bg-gradient-to-br from-zinc-900/80 to-black/90 backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl">
 
-          {/* 📅 Month Badge */}
+          {/* 📅 Month Badge (non-modal only) */}
+          {!isModal && (
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
               <Calendar className="w-4 h-4 text-violet-400" />
@@ -327,6 +367,7 @@ export default function FinancialForm() {
               <LogOut className="w-5 h-5 text-gray-400" />
             </button>
           </div>
+          )}
 
           {/* 🆕 Financial Form */}
           {activeTab === 'financial' && (
@@ -573,7 +614,8 @@ export default function FinancialForm() {
           </form>
         )}
 
-        {/* 🧪 DEV BUTTON */}
+        {/* 🧪 DEV BUTTON (non-modal only) */}
+        {!isModal && (
         <button 
           type="button" 
           onClick={toggleSimulation}
@@ -582,9 +624,11 @@ export default function FinancialForm() {
           <Bug className="w-3 h-3" />
           {prevMonthData ? 'Test: Switch to New User View' : 'Test: Switch to Returning User View'}
         </button>
+        )}
 
       </div>
+      </div>
     </div>
-    </div>
+  </div>  
   );
 }
