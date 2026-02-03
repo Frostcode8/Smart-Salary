@@ -173,12 +173,53 @@ SmartSalary actively **guides** it.
 
 Built for people who want **clarity, control, and long-term financial growth**.
 
-## ⚠️ API Key Notice (Hackathon Version)
 
-For this hackathon/demo version of **SmartSalary**, the Google Gemini AI API key is **currently hardcoded inside the source code** for faster testing and development.
+## 🔐 Environment Variables Setup
 
-> 🚨 **This is not secure and should never be used in a production application.**
+SmartSalary uses **Google Gemini AI** and **Google Analytics**.  
+To run the project locally or in production, you must configure your own keys.
 
-This approach is **temporary** and will be replaced with environment variable configuration (`.env`) before any real deployment or public release.
+---
+
+## 📄 Step 1: Create a `.env` File
+
+Create a file named `.env` in the root folder of the project and add:
+
+```env
+VITE_GEMINI_API_KEY=your_gemini_api_key_here
+VITE_GA_ID=your_google_analytics_id_here
+```
+
+---
+
+## 🔁 Step 2: Restart the App
+
+After adding the `.env` file, restart the development server:
+
+```bash
+npm run dev
+```
+
+Your AI features and analytics will now work correctly 🎉
+
+---
+
+## 🔁 Optional: Multiple Gemini API Keys
+
+To avoid quota limits or for backup, you can use multiple keys:
+
+```env
+VITE_GEMINI_KEY1=your_key_1
+VITE_GEMINI_KEY2=your_key_2
+VITE_GEMINI_KEY3=your_key_3
+```
+
+---
+
+## 🌐 MVP Live Demo
+
+Try the working MVP here:
+
+👉 **https://smartsalary.netlify.app/**
 
 ---
