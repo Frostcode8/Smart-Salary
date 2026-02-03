@@ -1114,6 +1114,7 @@ const reportData = {
             records={records}
             userName={userName}
             selectedMonthKey={selectedMonthKey}
+            careerProfile={careerProfile} // ✅ Pass career profile for insights
           />
         </div>
       )}

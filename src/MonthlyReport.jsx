@@ -8,6 +8,7 @@ export default function MonthlyReport({
     records,
     userName,
     selectedMonthKey,
+    careerProfile, // ✅ NEW: Career profile data
     id // Receive ID from parent to identify this element for PDF generation
 }) {
     /* ---------- DATA PREP ---------- */
@@ -90,7 +91,7 @@ export default function MonthlyReport({
         sub: { fontSize: "14px", color: "#6b7280", letterSpacing: "1px", textTransform: "uppercase" },
         section: { marginBottom: "30px" },
         sectionTitle: { fontSize: "16px", fontWeight: "bold", borderBottom: "1px solid #e5e7eb", paddingBottom: "5px", marginBottom: "15px", color: "#374151" },
-        grid: { display: "flex", gap: "15px", marginBottom: "20px" }, // Reduced gap slightly to fit 4 items
+        grid: { display: "flex", gap: "15px", marginBottom: "20px" },
         card: { flex: 1, padding: "12px", background: "#f9fafb", borderRadius: "8px", border: "1px solid #e5e7eb" },
         label: { fontSize: "11px", color: "#6b7280", marginBottom: "4px", textTransform: "uppercase", fontWeight: "600" },
         value: { fontSize: "18px", fontWeight: "bold", color: "#111827" },
@@ -100,7 +101,44 @@ export default function MonthlyReport({
         td: { borderBottom: "1px solid #e5e7eb", padding: "8px", color: "#1f2937" },
         footer: { marginTop: "auto", textAlign: "center", fontSize: "10px", color: "#9ca3af", borderTop: "1px solid #e5e7eb", paddingTop: "10px" },
         legendItem: { display: 'flex', alignItems: 'center', fontSize: '10px', marginBottom: '4px' },
-        colorBox: { width: '8px', height: '8px', borderRadius: '2px', marginRight: '6px' }
+        colorBox: { width: '8px', height: '8px', borderRadius: '2px', marginRight: '6px' },
+        // ✅ NEW: Career section styles
+        careerCard: { 
+            padding: "12px", 
+            background: "#f5f3ff", 
+            borderRadius: "8px", 
+            border: "1px solid #ddd6fe",
+            marginBottom: "8px"
+        },
+        careerLabel: { 
+            fontSize: "10px", 
+            color: "#7c3aed", 
+            marginBottom: "4px", 
+            textTransform: "uppercase", 
+            fontWeight: "700",
+            letterSpacing: "0.5px"
+        },
+        careerValue: { fontSize: "14px", fontWeight: "600", color: "#111827" },
+        careerSubtext: { fontSize: "9px", color: "#6b7280", marginTop: "2px", lineHeight: "1.3" },
+        badge: {
+            display: "inline-block",
+            padding: "3px 8px",
+            borderRadius: "4px",
+            fontSize: "9px",
+            fontWeight: "600",
+            textTransform: "uppercase"
+        },
+        badgeGreen: { background: "#d1fae5", color: "#065f46" },
+        badgeAmber: { background: "#fef3c7", color: "#92400e" },
+        badgeBlue: { background: "#dbeafe", color: "#1e40af" },
+        badgeViolet: { background: "#ede9fe", color: "#5b21b6" },
+        bulletList: {
+            paddingLeft: "15px",
+            margin: "4px 0",
+            fontSize: "10px",
+            lineHeight: "1.4",
+            color: "#4b5563"
+        }
     };
 
     // Custom Legend to ensure it renders in PDF
@@ -129,6 +167,11 @@ export default function MonthlyReport({
                 <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: "12px", color: "#6b7280" }}>Prepared for</div>
                     <div style={{ fontWeight: "bold", color: "#111827", fontSize: "16px" }}>{userName || "User"}</div>
+                    {careerProfile && (
+                        <div style={{ fontSize: "10px", color: "#7c3aed", marginTop: "4px" }}>
+                            {careerProfile.jobTitle} • {careerProfile.experience} yrs
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -158,6 +201,181 @@ export default function MonthlyReport({
                     </div>
                 </div>
             </div>
+
+            {/* ✅ NEW: CAREER INSIGHTS SECTION */}
+            {careerProfile && (
+                <div style={styles.section}>
+                    <div style={styles.sectionTitle}>Career Profile & Insights</div>
+                    
+                    {/* Profile Overview */}
+                    <div style={{...styles.grid, marginBottom: "15px"}}>
+                        <div style={{...styles.careerCard, flex: 1}}>
+                            <div style={styles.careerLabel}>Current Role</div>
+                            <div style={styles.careerValue}>{careerProfile.jobTitle}</div>
+                            <div style={styles.careerSubtext}>{careerProfile.industry} Industry</div>
+                        </div>
+                        <div style={{...styles.careerCard, flex: 1}}>
+                            <div style={styles.careerLabel}>Experience</div>
+                            <div style={styles.careerValue}>{careerProfile.experience} Years</div>
+                            <div style={styles.careerSubtext}>
+                                {careerProfile.learningHours > 0 
+                                    ? `Learning ${careerProfile.learningHours} hrs/week` 
+                                    : 'Active professional'}
+                            </div>
+                        </div>
+                        <div style={{...styles.careerCard, flex: 1}}>
+                            <div style={styles.careerLabel}>Job Mobility</div>
+                            <div>
+                                <span style={{
+                                    ...styles.badge,
+                                    ...(careerProfile.willingToSwitch ? styles.badgeGreen : styles.badgeAmber)
+                                }}>
+                                    {careerProfile.willingToSwitch ? 'Open to Switch' : 'Current Focus'}
+                                </span>
+                            </div>
+                            <div style={styles.careerSubtext}>
+                                {careerProfile.willingToSwitch 
+                                    ? 'Exploring new opportunities' 
+                                    : 'Growing in current role'}
+                            </div>
+                        </div>
+                        <div style={{...styles.careerCard, flex: 1}}>
+                            <div style={styles.careerLabel}>Work-Life</div>
+                            <div style={styles.careerValue}>{careerProfile.workingHours || 40} hrs/week</div>
+                            <div style={styles.careerSubtext}>
+                                {Math.max(0, 168 - (careerProfile.workingHours || 40) - 56)} hrs available for side projects
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Skills & Interests Grid */}
+                    <div style={{display: 'flex', gap: '15px'}}>
+                        {/* Primary Skills */}
+                        {careerProfile.primarySkills && careerProfile.primarySkills.length > 0 && (
+                            <div style={{...styles.careerCard, flex: 1}}>
+                                <div style={styles.careerLabel}>Key Skills</div>
+                                <div style={{display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px'}}>
+                                    {(Array.isArray(careerProfile.primarySkills) 
+                                        ? careerProfile.primarySkills 
+                                        : careerProfile.primarySkills.split(',').map(s => s.trim())
+                                    ).slice(0, 6).map((skill, idx) => (
+                                        <span key={idx} style={{
+                                            ...styles.badge,
+                                            ...styles.badgeBlue
+                                        }}>
+                                            {skill}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Interests & Hobbies */}
+                        {careerProfile.interests && (
+                            <div style={{...styles.careerCard, flex: 1}}>
+                                <div style={styles.careerLabel}>Interests & Hobbies</div>
+                                <div style={{
+                                    fontSize: '11px', 
+                                    color: '#4b5563', 
+                                    marginTop: '6px',
+                                    lineHeight: '1.4'
+                                }}>
+                                    {careerProfile.interests}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Career Strategy Insights */}
+                    <div style={{
+                        marginTop: '15px',
+                        padding: '15px',
+                        background: '#fefce8',
+                        borderRadius: '8px',
+                        border: '1px solid #fde047'
+                    }}>
+                        <div style={{
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            color: '#854d0e',
+                            marginBottom: '8px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                        }}>
+                            💡 Career Strategy Insights
+                        </div>
+                        
+                        {careerProfile.willingToSwitch ? (
+                            <div style={{fontSize: '10px', color: '#4b5563', lineHeight: '1.5'}}>
+                                <strong style={{color: '#065f46'}}>Growth Accelerator Active:</strong> Your willingness to explore new 
+                                opportunities opens access to top-tier companies with potentially 40-60% higher compensation. 
+                                Focus on building a strong portfolio, networking with industry leaders, and preparing for technical 
+                                interviews. Target product-based companies for maximum salary growth (1.5-2x in 2 years possible).
+                                <div style={{marginTop: '6px'}}>
+                                    <strong>Recommended Actions:</strong>
+                                    <ul style={styles.bulletList}>
+                                        <li>Update LinkedIn and resume with latest projects</li>
+                                        <li>Practice DSA and system design for interviews</li>
+                                        <li>Network with employees at target companies</li>
+                                        <li>Build 2-3 portfolio projects showcasing your skills</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{fontSize: '10px', color: '#4b5563', lineHeight: '1.5'}}>
+                                <strong style={{color: '#92400e'}}>Internal Growth Focus:</strong> Your strategy to grow within your 
+                                current organization is stable but may have slower salary progression (10-15% annually). Maximize 
+                                this path by becoming indispensable to your team, taking on leadership roles, and pursuing internal 
+                                certifications. Side income through freelancing or consulting becomes especially valuable to supplement 
+                                main salary growth.
+                                <div style={{marginTop: '6px'}}>
+                                    <strong>Recommended Actions:</strong>
+                                    <ul style={styles.bulletList}>
+                                        <li>Seek mentorship from senior leadership</li>
+                                        <li>Lead high-visibility projects within your team</li>
+                                        <li>Pursue company-sponsored certifications</li>
+                                        <li>Build side income streams (freelance, consulting, content)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Quick Stats */}
+                    <div style={{
+                        marginTop: '15px',
+                        display: 'flex',
+                        gap: '10px',
+                        fontSize: '9px',
+                        color: '#6b7280'
+                    }}>
+                        <div style={{flex: 1, textAlign: 'center', padding: '8px', background: '#f9fafb', borderRadius: '6px'}}>
+                            <div style={{fontWeight: '700', color: '#7c3aed'}}>
+                                {careerProfile.willingToSwitch ? '1.4x' : '1.0x'}
+                            </div>
+                            <div>Growth Multiplier</div>
+                        </div>
+                        <div style={{flex: 1, textAlign: 'center', padding: '8px', background: '#f9fafb', borderRadius: '6px'}}>
+                            <div style={{fontWeight: '700', color: '#7c3aed'}}>
+                                {careerProfile.willingToSwitch ? '18-24' : '24-36'}
+                            </div>
+                            <div>Months to Target</div>
+                        </div>
+                        <div style={{flex: 1, textAlign: 'center', padding: '8px', background: '#f9fafb', borderRadius: '6px'}}>
+                            <div style={{fontWeight: '700', color: '#7c3aed'}}>
+                                {careerProfile.willingToSwitch ? 'Top 25%' : 'Conservative'}
+                            </div>
+                            <div>Market Access</div>
+                        </div>
+                        <div style={{flex: 1, textAlign: 'center', padding: '8px', background: '#f9fafb', borderRadius: '6px'}}>
+                            <div style={{fontWeight: '700', color: '#7c3aed'}}>
+                                {Math.max(0, 168 - (careerProfile.workingHours || 40) - 56)}
+                            </div>
+                            <div>Side Hustle Hours/Week</div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* BUDGET PERFORMANCE */}
             <div style={styles.section}>

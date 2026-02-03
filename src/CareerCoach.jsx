@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Briefcase, TrendingUp, Target, Loader2, Info, Sparkles, AlertTriangle, CheckCircle, BarChart3, Edit2, Clock, Zap } from 'lucide-react';
+import { X, Briefcase, TrendingUp, Target, Loader2, Info, Sparkles, AlertTriangle, CheckCircle, BarChart3, Edit2, Clock, Zap, Lock, Unlock } from 'lucide-react';
 
-const GEMINI_API_KEY = "AIzaSyDdWCi1t1Q_fzkIw5Yo-IIAMD_PuyCpzC8";
+const GEMINI_API_KEY = "AIzaSyBRkwoqH5SB9bvK_NgFOXybuP5Cn2xAmS8";
 
 export default function CareerCoach({ income ,open, onClose, userProfile, monthData, onEditProfile }) {
   const [loading, setLoading] = useState(false);
@@ -36,13 +36,22 @@ export default function CareerCoach({ income ,open, onClose, userProfile, monthD
       const workingHours = parseFloat(userProfile.workingHours || 40);
       const availableHours = Math.max(0, 168 - workingHours - 56); // Total hours - work - sleep(8h*7)
 
+      // ✅ NEW: Calculate growth multiplier based on job switching willingness
+      const growthMultiplier = userProfile.willingToSwitch ? 1.4 : 1.0;
+      const marketAccessLevel = userProfile.willingToSwitch ? "top 25%" : "conservative";
+      const growthSpeed = userProfile.willingToSwitch ? "faster" : "slower";
+      const strategyType = userProfile.willingToSwitch ? "Company switch or role upgrade" : "Skill upgrade within current role";
+      const riskLevel = userProfile.willingToSwitch ? "lower stagnation risk" : "higher stagnation risk";
+
       const prompt = `
 
 You are a career intelligence AI. Analyze this professional profile and provide dual career insights PLUS side hustle opportunities.
-IMPORTANT:
-All salary values must be MONTHLY.
-Do NOT return annual or CTC values.
-Return ranges in ₹ per month only.
+
+IMPORTANT RULES:
+1. All salary values must be MONTHLY (₹/month)
+2. Do NOT return annual or CTC values
+3. Return ranges in ₹ per month only
+4. Consider the job switching willingness as a CRITICAL FACTOR
 
 Profile:
 - Job Title: ${userProfile.jobTitle}
@@ -51,12 +60,57 @@ Profile:
 - Current Salary: ₹${salary.toLocaleString()}/month
 - Skills: ${userProfile.primarySkills?.join ? userProfile.primarySkills.join(', ') : userProfile.primarySkills || 'Not specified'}
 - Learning Hours/Week: ${userProfile.learningHours || 0}
-- Willing to Switch Jobs: ${userProfile.willingToSwitch ? 'Yes' : 'No'}
+- Willing to Switch Jobs: ${userProfile.willingToSwitch ? 'YES' : 'NO'}
 - Working Hours/Week: ${workingHours}
 - Available Hours/Week: ${availableHours}
 - Interests: ${userProfile.interests || 'Not specified'}
 - User monthly salary: ₹${income} (per month)
 
+🎛️ CAREER MOBILITY SETTINGS (CRITICAL):
+- Willing to Switch: ${userProfile.willingToSwitch ? 'YES' : 'NO'}
+- Growth Multiplier: ${growthMultiplier}x
+- Market Access Level: ${marketAccessLevel}
+- Expected Growth Speed: ${growthSpeed}
+- Primary Strategy: ${strategyType}
+- Career Risk: ${riskLevel}
+
+INSTRUCTIONS BASED ON JOB SWITCHING WILLINGNESS:
+
+${userProfile.willingToSwitch ? `
+🟢 USER IS WILLING TO SWITCH JOBS - Apply these rules:
+- Market Salary Range: Use TOP 25% of market (higher-paying companies accessible)
+- Salary Growth: FASTER timeline (18-24 months to significant jump)
+- Target Roles: Include roles at BETTER companies/startups/product companies
+- Strategy: Emphasize "switch to X company" or "move to Y role at better firm"
+- Salary Ceiling: HIGHER potential (1.5-2x current in 2 years possible)
+- Bottlenecks: Focus on "interview prep" and "building portfolio" rather than internal politics
+- Side Hustles: Can be used as "proof of work" for job applications
+- 6-month target: Should suggest ACTIVE job search or company switch
+- Risk: LOWER stagnation risk
+- Tone: Optimistic, growth-focused, expansion-minded
+
+Example phrasing:
+- "You can reach ₹1L/month in 18 months by switching to a mid-sized product company"
+- "Target companies: Razorpay, Zerodha, Cure.fit (product-based firms)"
+- "Your salary can grow 40-60% with a strategic company switch"
+` : `
+🔴 USER IS NOT WILLING TO SWITCH JOBS - Apply these rules:
+- Market Salary Range: Use CONSERVATIVE bands (internal promotions only)
+- Salary Growth: SLOWER timeline (24-36 months for significant growth)
+- Target Roles: Suggest INTERNAL role changes or promotions within same company
+- Strategy: Emphasize "upskill within current role" or "internal transfer"
+- Salary Ceiling: LOWER potential (1.2-1.3x current in 2 years realistic)
+- Bottlenecks: Focus on "limited by company salary bands" and "need internal visibility"
+- Side Hustles: Position as "income supplement" since main salary growth is capped
+- 6-month target: Should focus on INTERNAL improvements, certifications
+- Risk: HIGHER stagnation risk
+- Tone: Realistic, grounded, focus on maximizing current position
+
+Example phrasing:
+- "At your current company type, salary growth is capped unless you change roles internally"
+- "Focus on becoming indispensable in your team to secure the next promotion"
+- "Side income will be crucial since company-based growth may be limited"
+`}
 
 Task: Provide a realistic career analysis using current ${currentYear} India job market data AND suggest practical side hustles.
 
@@ -65,52 +119,58 @@ Return ONLY valid JSON (no markdown, no backticks):
   "current": {
     "healthScore": <number 0-100>,
     "marketSalaryRange": {
-      "min": <number>,
+      "min": <number, ${userProfile.willingToSwitch ? 'higher range' : 'conservative range'}>,
       "median": <number>,
-      "max": <number>
+      "max": <number, ${userProfile.willingToSwitch ? 'top 25% companies' : 'typical max for non-switchers'}>
     },
     "salaryGap": <number percentage, negative if underpaid>,
     "positionPercentile": <number 0-100>,
-    "bottlenecks": [<string array, max 3 items>],
+    "bottlenecks": [<string array, max 3 items, ${userProfile.willingToSwitch ? 'focus on interview skills, portfolio' : 'focus on internal constraints, company limits'}>],
     "strengths": [<string array, max 2 items>],
-    "reasoning": "<brief explanation>"
+    "reasoning": "<brief explanation mentioning ${userProfile.willingToSwitch ? 'market opportunities available through switching' : 'growth limited to internal progression'}>"
   },
   "potential": {
     "sixMonths": {
-      "targetRole": "<realistic role name>",
-      "salaryRange": "<₹XX,000 - ₹YY,000 format>",
-      "probability": <number 0-1>,
-      "actions": [<string array, max 3 specific actions>]
+      "targetRole": "<realistic role name, ${userProfile.willingToSwitch ? 'at better companies' : 'internal promotion'}>",
+      "salaryRange": "<₹XX,000 - ₹YY,000 format, ${userProfile.willingToSwitch ? 'optimistic' : 'conservative'}>",
+      "probability": <number 0-1, ${userProfile.willingToSwitch ? 'higher for switchers' : 'lower for non-switchers'}>,
+      "actions": [<string array, max 3 specific actions, ${userProfile.willingToSwitch ? 'include job search tactics' : 'include internal networking'}>]
     },
     "twoYears": {
       "targetRole": "<realistic role name>",
-      "salaryRange": "<₹X.XL - ₹Y.YL format>",
+      "salaryRange": "<₹X.XL - ₹Y.YL format, apply ${growthMultiplier}x multiplier>",
       "probability": <number 0-1>,
       "actions": [<string array, max 2 strategic actions>]
     },
-    "reasoning": "<brief explanation of growth path>"
+    "reasoning": "<brief explanation of growth path, explicitly mention ${userProfile.willingToSwitch ? 'company switching as key accelerator' : 'internal growth as slower but stable path'}>"
   },
   "sideHustles": [
     {
       "title": "<side hustle name>",
-      "description": "<2-3 line description>",
+      "description": "<2-3 line description, ${userProfile.willingToSwitch ? 'mention as portfolio builder' : 'emphasize as income supplement due to limited main salary growth'}>",
       "timeRequired": "<X hours/week>",
       "potentialIncome": "<₹X,000 - ₹Y,000/month>",
       "difficulty": "<Easy/Medium/Hard>",
       "skills": [<string array, required skills>],
       "platforms": [<string array, where to start>]
     }
-  ]
+  ],
+  "mobilityInsight": {
+    "status": "${userProfile.willingToSwitch ? 'Open to Switch' : 'Not Switching'}",
+    "impact": "<1-2 sentence explanation of how this affects their career trajectory>",
+    "recommendation": "<Should they reconsider? What's the trade-off?>"
+  }
 }
 
 Rules:
 1. Base salary data on real ${currentYear} India market rates
 2. Be realistic - don't over-promise
 3. Consider industry, experience, and current economic conditions
-4. Side hustles should be practical and match user's skills/interests
-5. Suggest 3-5 side hustles that fit available hours (${availableHours} hours/week)
-6. Include both skill-building and income-generating hustles
-7. Return ONLY the JSON object
+4. CRITICAL: Apply the ${growthMultiplier}x multiplier to all growth projections
+5. Side hustles should be practical and match user's skills/interests
+6. Suggest 3-5 side hustles that fit available hours (${availableHours} hours/week)
+7. ${userProfile.willingToSwitch ? 'Emphasize that switching jobs is the fastest path to salary growth' : 'Emphasize maximizing current role and side income since switching is not an option'}
+8. Return ONLY the JSON object
 `;
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
@@ -185,6 +245,7 @@ Rules:
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <Loader2 className="w-12 h-12 text-violet-400 animate-spin" />
               <p className="text-gray-400 text-sm">Analyzing your career trajectory...</p>
+              <p className="text-gray-500 text-xs">Considering your job switching preferences...</p>
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -200,11 +261,31 @@ Rules:
           ) : careerInsight ? (
             <div className="space-y-6">
               
-              {/* Profile Summary */}
+              {/* Profile Summary with Mobility Status */}
               <div className="p-5 rounded-2xl bg-gradient-to-br from-violet-900/20 to-purple-900/20 border border-violet-500/30">
-                <div className="flex items-center gap-3 mb-3">
-                  <Briefcase className="w-5 h-5 text-violet-400" />
-                  <h3 className="text-base font-bold text-white">Your Profile</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <Briefcase className="w-5 h-5 text-violet-400" />
+                    <h3 className="text-base font-bold text-white">Your Profile</h3>
+                  </div>
+                  {/* ✅ NEW: Mobility Badge */}
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
+                    userProfile.willingToSwitch 
+                      ? 'bg-emerald-500/20 border border-emerald-500/30' 
+                      : 'bg-amber-500/20 border border-amber-500/30'
+                  }`}>
+                    {userProfile.willingToSwitch ? (
+                      <>
+                        <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-xs font-semibold text-emerald-300">Open to Switch</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="text-xs font-semibold text-amber-300">Current Role Focus</span>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                   <div>
@@ -225,6 +306,36 @@ Rules:
                   </div>
                 </div>
               </div>
+
+              {/* ✅ NEW: Mobility Insight Box */}
+              {careerInsight.mobilityInsight && (
+                <div className={`p-5 rounded-2xl border ${
+                  userProfile.willingToSwitch 
+                    ? 'bg-gradient-to-br from-emerald-900/20 to-teal-900/20 border-emerald-500/30' 
+                    : 'bg-gradient-to-br from-amber-900/20 to-orange-900/20 border-amber-500/30'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg ${
+                      userProfile.willingToSwitch ? 'bg-emerald-500/20' : 'bg-amber-500/20'
+                    }`}>
+                      {userProfile.willingToSwitch ? (
+                        <TrendingUp className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Target className="w-4 h-4 text-amber-400" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className={`text-sm font-bold mb-1 ${
+                        userProfile.willingToSwitch ? 'text-emerald-300' : 'text-amber-300'
+                      }`}>
+                        Career Mobility: {careerInsight.mobilityInsight.status}
+                      </h4>
+                      <p className="text-xs text-gray-400 mb-2">{careerInsight.mobilityInsight.impact}</p>
+                      <p className="text-xs text-gray-300 italic">💡 {careerInsight.mobilityInsight.recommendation}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Two-Column Layout */}
               <div className="grid lg:grid-cols-2 gap-6">
@@ -289,7 +400,17 @@ Rules:
 
                   {/* Market Salary */}
                   <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-900/20 to-cyan-900/20 border border-blue-500/30">
-                    <h4 className="text-sm font-bold text-blue-300 mb-3">Market Salary Range</h4>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-bold text-blue-300">Market Salary Range</h4>
+                      {/* ✅ NEW: Market Access Indicator */}
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                        userProfile.willingToSwitch 
+                          ? 'bg-emerald-500/20 text-emerald-300' 
+                          : 'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {userProfile.willingToSwitch ? 'Top 25% Access' : 'Conservative'}
+                      </span>
+                    </div>
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-gray-400">Minimum</span>
@@ -434,6 +555,7 @@ Rules:
                   <p className="text-xs text-gray-400 mb-4">
                     Based on your {userProfile.workingHours || 40} hours/week work schedule, 
                     you have approximately {Math.max(0, 168 - parseFloat(userProfile.workingHours || 40) - 56)} hours/week available for side projects
+                    {!userProfile.willingToSwitch && <span className="text-amber-400 font-semibold"> • Extra important since main salary growth is limited</span>}
                   </p>
                   
                   <div className="grid md:grid-cols-2 gap-4">
@@ -490,7 +612,7 @@ Rules:
 
               {/* Disclaimer */}
               <div className="text-[10px] text-gray-600 text-center pt-4 pb-2 border-t border-white/5">
-                Disclaimer: This analysis is AI-generated based on general market trends. 
+                Disclaimer: This analysis is AI-generated based on general market trends and your job switching preferences. 
                 Actual career outcomes depend on individual performance, market conditions, and opportunities. 
                 Consult with a career counselor for personalized guidance.
               </div>
