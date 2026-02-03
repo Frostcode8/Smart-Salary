@@ -173,4 +173,12 @@ SmartSalary actively **guides** it.
 
 Built for people who want **clarity, control, and long-term financial growth**.
 
+## ⚠️ API Key Notice (Hackathon Version)
+
+For this hackathon/demo version of **SmartSalary**, the Google Gemini AI API key is **currently hardcoded inside the source code** for faster testing and development.
+
+> 🚨 **This is not secure and should never be used in a production application.**
+
+This approach is **temporary** and will be replaced with environment variable configuration (`.env`) before any real deployment or public release.
+
 ---
