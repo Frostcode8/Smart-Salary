@@ -11,7 +11,7 @@ const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __f
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-const GEMINI_API_KEY = "AIzaSyD-N7mbQrqS3slnzYTKaeGmoMADhAwpg_I";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 
 // 🎨 Circular Progress Component

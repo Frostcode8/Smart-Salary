@@ -100,7 +100,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-const GEMINI_API_KEY = "AIzaSyDdWCi1t1Q_fzkIw5Yo-IIAMD_PuyCpzC8";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 // ------------------------------------------------------------------
 // 🧩 COMPONENT: InvestmentPlans
 // ------------------------------------------------------------------

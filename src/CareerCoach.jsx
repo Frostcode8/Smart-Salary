@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Briefcase, TrendingUp, Target, Loader2, Info, Sparkles, AlertTriangle, CheckCircle, BarChart3, Edit2, Clock, Zap, Lock, Unlock } from 'lucide-react';
 
-const GEMINI_API_KEY = "AIzaSyBRkwoqH5SB9bvK_NgFOXybuP5Cn2xAmS8";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 export default function CareerCoach({ income ,open, onClose, userProfile, monthData, onEditProfile }) {
   const [loading, setLoading] = useState(false);
