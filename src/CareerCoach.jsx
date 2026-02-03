@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X, Briefcase, TrendingUp, Target, Loader2, Info, Sparkles, AlertTriangle, CheckCircle, BarChart3, Edit2, Clock, Zap, Lock, Unlock } from 'lucide-react';
+import ReactGA from "react-ga4";
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+ReactGA.event({
+  category: "AI",
+  action: "Generate Roadmap",
+});
+
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY3;
 
 export default function CareerCoach({ income ,open, onClose, userProfile, monthData, onEditProfile }) {
   const [loading, setLoading] = useState(false);

@@ -88,6 +88,12 @@ import {
   ComposedChart,
   Line
 } from "recharts";
+import ReactGA from "react-ga4";
+
+ReactGA.event({
+  category: "AI",
+  action: "Generate Roadmap",
+});
 
 // ------------------------------------------------------------------
 // 🔥 FIREBASE INITIALIZATION (Inline for Single File Environment)
@@ -100,7 +106,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY2;
 // ------------------------------------------------------------------
 // 🧩 COMPONENT: InvestmentPlans
 // ------------------------------------------------------------------

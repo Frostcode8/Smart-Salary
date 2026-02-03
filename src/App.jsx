@@ -9,13 +9,24 @@ import Login from './Login';
 import Register from './Register';
 import FinancialForm from './FinancialForm';
 import Dashboard from './Dashboard';
+import { useLocation } from "react-router-dom";
+import ReactGA from "react-ga4";
+
 
 function App() {
+  const location = useLocation();
+  useEffect(() => {
+  ReactGA.send({
+    hitType: "pageview",
+    page: location.pathname,
+  });
+}, [location]);
+  
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [monthSetupComplete, setMonthSetupComplete] = useState(false);
   const [currentPage, setCurrentPage] = useState('home');
-
+  
   // ✅ Get current month key (YYYY-MM)
   const currentMonthKey = new Date().toISOString().slice(0, 7);
 
@@ -86,7 +97,7 @@ function App() {
         return <LandingPage onNavigate={setCurrentPage} />;
     }
   };
-
+  
   return <>{renderPage()}</>;
 }
 

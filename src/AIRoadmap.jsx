@@ -5,13 +5,20 @@ import {
 } from "lucide-react";
 import { doc, getDoc, setDoc, updateDoc, getFirestore } from "firebase/firestore";
 import { initializeApp, getApps, getApp } from "firebase/app";
+import ReactGA from "react-ga4";
+
+ReactGA.event({
+  category: "AI",
+  action: "Generate Roadmap",
+});
+
 
 // 🔥 FIREBASE INITIALIZATION (Inline for Stability)
 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY1;
 
 
 // 🎨 Circular Progress Component
